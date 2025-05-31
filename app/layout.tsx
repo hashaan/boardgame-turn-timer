@@ -4,6 +4,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Dune Imperium Timer',
   description: 'A timer for the Dune Imperium board game',
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({

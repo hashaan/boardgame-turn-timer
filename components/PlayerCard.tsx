@@ -231,7 +231,7 @@ export const PlayerCard = ({
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-gray-600">
                 <span>Turn Progress</span>
-                <span>{Math.min(currentTurnTime, 60)}/60s</span>
+                <span>{Math.min(60 - currentTurnTime, 60)}/60s</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
@@ -256,16 +256,17 @@ export const PlayerCard = ({
                 </span>
               </div>
               <div
-                className={`text-lg font-bold ${player.currentTurnEfficiency >= 0 ? colors.text.replace("700", "800") : "text-red-800"}`}
+                className={`text-lg font-bold ${player.currentTurnEfficiency >= 0 ? colors.text : "text-red-800"}`}
               >
-                {player.currentTurnEfficiency >= 0 ? "+" : ""}
-                {Math.round(player.currentTurnEfficiency)}s
+                {player.currentTurnEfficiency >= 0 ? "+ " : "- "}
+                {formatTime(Math.abs(player.currentTurnEfficiency))}
+                {Math.abs(player.currentTurnEfficiency) >= 60 ? "m" : "s"}
               </div>
             </div>
 
-            <div className={`${colors.bg} rounded-lg p-3`}>
+            <div className={`rounded-lg p-3 ${colors.bg}`}>
               <div className={`text-xs md:text-sm font-medium ${colors.text} mb-1`}>Turns</div>
-              <div className={`text-lg font-bold ${colors.text.replace("700", "800")}`}>{player.turnsCompleted}</div>
+              <div className={`text-lg font-bold ${colors.text}`}>{player.turnsCompleted}</div>
             </div>
           </div>
 

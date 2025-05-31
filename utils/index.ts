@@ -8,11 +8,16 @@ export const formatTime = (seconds: number): string => {
 }
 
 export const getPlayerColors = (color: string): ColorOption => {
+  console.log(color)
   return AVAILABLE_COLORS.find((c) => c.value === color) || AVAILABLE_COLORS[0]
 }
 
 export const getTurnProgressColor = (secondsUsed: number): string => {
-  if (secondsUsed < 30) return "bg-green-500"
-  if (secondsUsed < 50) return "bg-yellow-500"
-  return "bg-red-500"
+  if (secondsUsed < 30) {
+    return "bg-green-500"
+  } else if (secondsUsed < 50) {
+    return "bg-yellow-500"
+  } else {
+    return "bg-red-500"
+  }
 }

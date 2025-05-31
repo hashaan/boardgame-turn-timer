@@ -10,9 +10,11 @@ import { ControlPanel } from "@/components/ControlPanel"
 import { PlayerCard } from "@/components/PlayerCard"
 import { GameInfo } from "@/components/GameInfo"
 import { MobileCardNavigation } from "@/components/MobileCardNavigation"
+import { useState, useEffect } from "react"
 
 export default function DuneImperiumTimer() {
   const {
+    hydrated,
     // State
     players,
     isRunning,
@@ -55,10 +57,21 @@ export default function DuneImperiumTimer() {
     setSoundEnabled,
     setEditingPlayer,
     setEditName,
-    setManualNavigation, // Add this line
+    setManualNavigation,
+    setCurrentPlayerIndex,
   } = useGameTimer()
 
   const isLandscape = useOrientation()
+
+  // Add new state for next player index
+  const [nextPlayerIndex, setNextPlayerIndex] = useState(currentPlayerIndex)
+
+  // Update currentPlayerIndex after transition is complete
+  useEffect(() => {
+    if (!isTransitioning) {
+      setCurrentPlayerIndex(nextPlayerIndex)
+    }
+  }, [isTransitioning, nextPlayerIndex])
 
   useKeyboardShortcuts({
     onNextTurn: nextTurn,
@@ -66,6 +79,8 @@ export default function DuneImperiumTimer() {
     onToggleTimer: startPauseTimer,
     gameStarted,
   })
+
+  if (!hydrated) return null;
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -80,27 +95,22 @@ export default function DuneImperiumTimer() {
   // Enhanced mobile view detection
   const isMobileView = typeof window !== "undefined" && window.innerWidth < 1024 && !isLandscape
 
-  // Enhanced mobile navigation handlers with proper manual navigation flags
+  // Updated mobile navigation handlers to use nextPlayerIndex for transitions
   const handleMobileNext = () => {
     const currentPlayer = players[currentPlayerIndex]
     const isPaused = gameStarted && !isRunning
 
-    // If game is paused, always allow free navigation
     if (isPaused) {
-      nextPlayerCard("right")
+      // Directly set nextPlayerIndex for paused state
+      setNextPlayerIndex((currentPlayerIndex + 1) % players.length)
       return
     }
 
-    // If viewing the active player and game is running, advance the turn
     if (currentPlayer?.isActive && gameStarted && isRunning) {
-      // Set manual navigation flag BEFORE calling nextTurn to prevent auto-tracking conflicts
-      setManualNavigation(true)
+      // Set nextPlayerIndex before calling nextTurn
+      setNextPlayerIndex((currentPlayerIndex + 1) % players.length)
+      console.log('mobile next turn')
       nextTurn()
-      // Reset manual navigation after a delay
-      setTimeout(() => setManualNavigation(false), 2000)
-    } else {
-      // Otherwise, just navigate to next card
-      nextPlayerCard("right")
     }
   }
 
@@ -108,22 +118,16 @@ export default function DuneImperiumTimer() {
     const currentPlayer = players[currentPlayerIndex]
     const isPaused = gameStarted && !isRunning
 
-    // If game is paused, always allow free navigation
     if (isPaused) {
-      previousPlayerCard("left")
+      // Directly set nextPlayerIndex for paused state
+      setNextPlayerIndex((currentPlayerIndex - 1 + players.length) % players.length)
       return
     }
 
-    // If viewing the active player and game is running, go to previous turn
     if (currentPlayer?.isActive && gameStarted && isRunning) {
-      // Set manual navigation flag BEFORE calling previousTurn to prevent auto-tracking conflicts
-      setManualNavigation(true)
+      // Set nextPlayerIndex before calling previousTurn
+      setNextPlayerIndex((currentPlayerIndex - 1 + players.length) % players.length)
       previousTurn()
-      // Reset manual navigation after a delay
-      setTimeout(() => setManualNavigation(false), 2000)
-    } else {
-      // Otherwise, just navigate to previous card
-      previousPlayerCard("left")
     }
   }
 

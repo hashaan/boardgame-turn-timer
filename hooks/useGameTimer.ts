@@ -58,17 +58,22 @@ const initialPlayers: Player[] = [
 ]
 
 export const useGameTimer = () => {
-  const [players, setPlayers] = useLocalStorage<Player[]>("dune-timer-players", initialPlayers)
-  const [isRunning, setIsRunning] = useLocalStorage<boolean>("dune-timer-running", false)
+  // Hydration flag
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
+  // SSR-safe initial state
+  const [players, setPlayers] = useState<Player[]>(initialPlayers)
+  const [isRunning, setIsRunning] = useState<boolean>(false)
   const [turnStartTime, setTurnStartTime] = useState<number | null>(null)
   const [pausedElapsedTime, setPausedElapsedTime] = useState<number>(0)
-  const [gameStarted, setGameStarted] = useLocalStorage<boolean>("dune-timer-started", false)
-  const [currentRound, setCurrentRound] = useLocalStorage<number>("dune-timer-round", 1)
-  const [initialTime, setInitialTime] = useLocalStorage<number>("dune-timer-initial", DEFAULT_INITIAL_TIME)
+  const [gameStarted, setGameStarted] = useState<boolean>(false)
+  const [currentRound, setCurrentRound] = useState<number>(1)
+  const [initialTime, setInitialTime] = useState<number>(DEFAULT_INITIAL_TIME)
   const [showSettings, setShowSettings] = useState(false)
-  const [showAdjustButtons, setShowAdjustButtons] = useLocalStorage<boolean>("dune-timer-adjust-buttons", false)
+  const [showAdjustButtons, setShowAdjustButtons] = useState<boolean>(false)
   const [showColorSelectors, setShowColorSelectors] = useState(true)
-  const [soundEnabled, setSoundEnabled] = useLocalStorage<boolean>("dune-timer-sound", true)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
   const [editingPlayer, setEditingPlayer] = useState<number | null>(null)
   const [editName, setEditName] = useState("")
   const [draggedPlayer, setDraggedPlayer] = useState<number | null>(null)
@@ -77,6 +82,9 @@ export const useGameTimer = () => {
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false)
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null)
   const [manualNavigation, setManualNavigation] = useState<boolean>(false)
+  const [nextPlayerId, setNextPlayerId] = useState<number | null>(null)
+  const [playerOrder, setPlayerOrder] = useState<number[]>([])
+  const [currentOrderIndex, setCurrentOrderIndex] = useState<number>(0)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const manualNavigationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -84,6 +92,59 @@ export const useGameTimer = () => {
 
   const activePlayer = players.find((p) => p.isActive)
   const activePlayerIndex = players.findIndex((p) => p.isActive)
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    if (!hydrated) return
+    const get = (key: string) => {
+      if (typeof window === "undefined") return null
+      return localStorage.getItem(key)
+    }
+    const storedPlayers = get("dune-timer-players")
+    if (storedPlayers) setPlayers(JSON.parse(storedPlayers))
+    const storedRunning = get("dune-timer-running")
+    if (storedRunning) setIsRunning(JSON.parse(storedRunning))
+    const storedStarted = get("dune-timer-started")
+    if (storedStarted) setGameStarted(JSON.parse(storedStarted))
+    const storedRound = get("dune-timer-round")
+    if (storedRound) setCurrentRound(JSON.parse(storedRound))
+    const storedInitial = get("dune-timer-initial")
+    if (storedInitial) setInitialTime(JSON.parse(storedInitial))
+    const storedAdjust = get("dune-timer-adjust-buttons")
+    if (storedAdjust) setShowAdjustButtons(JSON.parse(storedAdjust))
+    const storedSound = get("dune-timer-sound")
+    if (storedSound) setSoundEnabled(JSON.parse(storedSound))
+  }, [hydrated])
+
+  // Persist to localStorage on change
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-players", JSON.stringify(players))
+  }, [players, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-running", JSON.stringify(isRunning))
+  }, [isRunning, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-started", JSON.stringify(gameStarted))
+  }, [gameStarted, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-round", JSON.stringify(currentRound))
+  }, [currentRound, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-initial", JSON.stringify(initialTime))
+  }, [initialTime, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-adjust-buttons", JSON.stringify(showAdjustButtons))
+  }, [showAdjustButtons, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    localStorage.setItem("dune-timer-sound", JSON.stringify(soundEnabled))
+  }, [soundEnabled, hydrated])
 
   // Auto-track active player ONLY when game is running and no manual navigation
   // Removed currentPlayerIndex from dependencies to prevent conflicts
@@ -186,6 +247,9 @@ export const useGameTimer = () => {
 
   const startPauseTimer = () => {
     if (!gameStarted) {
+      // Store initial player order when game starts
+      setPlayerOrder(players.map(p => p.id))
+      setCurrentOrderIndex(0)
       setGameStarted(true)
       setTurnStartTime(Date.now())
       setPausedElapsedTime(0)
@@ -212,18 +276,7 @@ export const useGameTimer = () => {
       }
       setIsRunning(false)
     } else {
-      // Resume the game - give +60 seconds to the active player
-      setPlayers((prev) =>
-        prev.map((player) =>
-          player.isActive
-            ? {
-                ...player,
-                timeRemaining: player.timeRemaining + 60,
-                currentTurnEfficiency: 0,
-              }
-            : player,
-        ),
-      )
+      // Resume the game - don't add extra time
       setTurnStartTime(Date.now())
       setIsRunning(true)
     }
@@ -289,6 +342,14 @@ export const useGameTimer = () => {
   const nextTurn = () => {
     if (!gameStarted) return
 
+    // If all players have revealed their turns, end the round
+    const availablePlayers = players.filter((p) => !p.isOutOfRound)
+
+    if (availablePlayers.length === 0) {
+      console.log('end round')
+      endRound()
+      return 
+    }
     const currentTime = Date.now()
     const turnDuration = turnStartTime ? Math.floor((currentTime - turnStartTime) / 1000) + pausedElapsedTime : 0
     const turnEfficiency = 60 - turnDuration
@@ -422,25 +483,23 @@ export const useGameTimer = () => {
   const endRound = () => {
     sounds.playRoundEnd()
 
-    // Find the next player to start the new round
-    const currentActivePlayer = players.find((p) => p.isActive)
-    let nextStarterIndex = 0
+    // Calculate the next player index before incrementing
+    const nextIndex = (currentOrderIndex + 1) % playerOrder.length
+    const nextPlayerId = playerOrder[nextIndex]
+    
+    // Update the order index
+    setCurrentOrderIndex(nextIndex)
 
-    if (currentActivePlayer) {
-      const currentIndex = players.findIndex((p) => p.id === currentActivePlayer.id)
-      nextStarterIndex = (currentIndex + 1) % players.length
-    }
-
-    // Reset ALL players and start with the next player
+    // Reset ALL players and start with the next player in order
     setPlayers((prev) =>
-      prev.map((player, index) => ({
+      prev.map((player) => ({
         ...player,
         isOutOfRound: false,
         isRevealing: false,
-        isActive: index === nextStarterIndex, // Next player becomes active
+        isActive: player.id === nextPlayerId,
         turnsCompleted: 0,
         currentTurnEfficiency: 0,
-        timeRemaining: index === nextStarterIndex ? player.timeRemaining + 60 : player.timeRemaining,
+        timeRemaining: player.id === nextPlayerId ? player.timeRemaining + 60 : player.timeRemaining,
       })),
     )
 
@@ -477,6 +536,9 @@ export const useGameTimer = () => {
     setIsTransitioning(false)
     setSlideDirection(null)
     setManualNavigation(false)
+    setNextPlayerId(null)
+    setPlayerOrder([])
+    setCurrentOrderIndex(0)
     if (typeof window !== "undefined") {
       localStorage.removeItem("dune-timer-turn-start")
       localStorage.removeItem("dune-timer-paused-elapsed")
@@ -534,19 +596,17 @@ export const useGameTimer = () => {
 
     setIsTransitioning(true)
     setSlideDirection(direction)
-
+    setCurrentPlayerIndex((prev) => {
+      const newIndex = prev === 0 ? players.length - 1 : prev - 1
+      console.log("Setting currentPlayerIndex to:", newIndex)
+      return newIndex
+    })
     setTimeout(() => {
-      setCurrentPlayerIndex((prev) => {
-        const newIndex = (prev + 1) % players.length
-        console.log("Setting currentPlayerIndex to:", newIndex)
-        return newIndex
-      })
 
-      setTimeout(() => {
-        setIsTransitioning(false)
-        setSlideDirection(null)
-      }, 500)
-    }, 50)
+      setIsTransitioning(false)
+      setSlideDirection(null)
+    }, 500)
+
 
     // Reset manual navigation flag after a longer delay
     manualNavigationTimeoutRef.current = setTimeout(() => {
@@ -599,7 +659,7 @@ export const useGameTimer = () => {
   }, [])
 
   return {
-    // State
+    hydrated,
     players,
     isRunning,
     turnStartTime,
@@ -618,10 +678,9 @@ export const useGameTimer = () => {
     currentPlayerIndex,
     isTransitioning,
     slideDirection,
-    // Computed values
+    nextPlayerId,
     getCurrentTurnTime,
     getActivePlayersCount,
-    // Actions
     startPauseTimer,
     switchToPlayer,
     nextTurn,
@@ -636,7 +695,6 @@ export const useGameTimer = () => {
     handleDrop,
     nextPlayerCard,
     previousPlayerCard,
-    // Setters
     setInitialTime,
     setShowSettings,
     setShowAdjustButtons,
@@ -645,6 +703,6 @@ export const useGameTimer = () => {
     setEditingPlayer,
     setEditName,
     setCurrentPlayerIndex,
-    setManualNavigation, // Add this line
+    setManualNavigation,
   }
 }

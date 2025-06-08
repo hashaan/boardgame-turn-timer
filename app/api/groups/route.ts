@@ -5,12 +5,28 @@ export async function GET(request: NextRequest) {
   try {
     const userId = getUserId(request)
 
-    // Get all groups the user has access to
+    // Get the group IDs from the request headers (sent by client)
+    const allowedGroupIds = request.headers.get("x-allowed-group-ids")
+
+    if (!allowedGroupIds) {
+      // If no group IDs provided, return empty array
+      return NextResponse.json({ success: true, data: [] })
+    }
+
+    const groupIdArray = allowedGroupIds.split(",").filter(Boolean)
+
+    if (groupIdArray.length === 0) {
+      return NextResponse.json({ success: true, data: [] })
+    }
+
+    // Get groups that the user has codes for AND has database access to
     const groups = await sql`
       SELECT g.id, g.name, g.code, g.description, g.created_at, g.created_by
       FROM groups g
       INNER JOIN group_access ga ON g.id = ga.group_id
-      WHERE ga.user_id = ${userId} AND ga.role IN ('member', 'admin')
+      WHERE ga.user_id = ${userId} 
+        AND ga.role IN ('member', 'admin')
+        AND g.id = ANY(${groupIdArray})
       ORDER BY ga.accessed_at DESC
     `
 

@@ -23,7 +23,7 @@ export default function LeaderboardPage() {
     loading,
     gameLoading,
     playthroughLoading,
-    playthroughs, // Now properly imported
+    playthroughs,
     currentLeaderboard,
     currentGroupOverview,
     currentGroupPlayers,
@@ -34,6 +34,7 @@ export default function LeaderboardPage() {
     deletePlaythrough,
     setSelectedGroupId,
     setSelectedGameId,
+    leaveGroup,
   } = useLeaderboard()
 
   const [newGameName, setNewGameName] = useState("")
@@ -65,6 +66,10 @@ export default function LeaderboardPage() {
     }
   }
 
+  const handleLeaveGroup = (groupId: string) => {
+    leaveGroup(groupId)
+  }
+
   const handleCreateGame = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (!selectedGroupId || !newGameName.trim()) return
@@ -91,7 +96,7 @@ export default function LeaderboardPage() {
     } catch (e: any) {
       console.error("Page: Error adding playthrough:", e)
       toast.error(e.message || "Error recording playthrough.")
-      throw e // Re-throw to let the form handle it
+      throw e
     }
   }
 
@@ -117,7 +122,7 @@ export default function LeaderboardPage() {
   // Filter playthroughs for the current game
   const currentGamePlaythroughs = selectedGameId ? playthroughs.filter((p) => p.game_id === selectedGameId) : []
 
-  console.log("Current game playthroughs:", currentGamePlaythroughs) // Debug log
+  console.log("Current game playthroughs:", currentGamePlaythroughs)
 
   // Show game leaderboard if a game is selected
   if (selectedGameId && currentLeaderboard) {
@@ -226,6 +231,7 @@ export default function LeaderboardPage() {
         onSelectGroup={setSelectedGroupId}
         onCreateGroup={handleCreateGroup}
         onJoinGroup={handleJoinGroup}
+        onLeaveGroup={handleLeaveGroup}
         loading={loading}
       />
     </div>

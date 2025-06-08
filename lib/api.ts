@@ -64,9 +64,16 @@ export const groupApi = {
     }
   },
 
-  async getGroups(): Promise<ApiResponse<Group[]>> {
+  async getGroups(allowedGroupIds: string[] = []): Promise<ApiResponse<Group[]>> {
     try {
-      const response = await fetch(`${API_BASE}/groups`)
+      const headers: Record<string, string> = {}
+
+      // Send allowed group IDs in header
+      if (allowedGroupIds.length > 0) {
+        headers["x-allowed-group-ids"] = allowedGroupIds.join(",")
+      }
+
+      const response = await fetch(`${API_BASE}/groups`, { headers })
       const data = await response.json()
       return data
     } catch (error) {

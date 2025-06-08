@@ -11,10 +11,20 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Users, PlusSquare, Key, Copy, Check, Calendar, Loader2 } from "lucide-react"
+import { Users, PlusSquare, Key, Copy, Check, Calendar, Loader2, LogOut } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 import { formatGroupCode } from "@/utils/group-code-utils"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface GroupSelectorProps {
   groups: Group[]
@@ -22,6 +32,7 @@ interface GroupSelectorProps {
   onSelectGroup: (groupId: string) => void
   onCreateGroup: (name: string, description?: string) => Promise<Group | undefined>
   onJoinGroup: (code: string) => Promise<Group | undefined>
+  onLeaveGroup?: (groupId: string) => void
   loading?: boolean
 }
 
@@ -31,6 +42,7 @@ export const GroupSelector = ({
   onSelectGroup,
   onCreateGroup,
   onJoinGroup,
+  onLeaveGroup,
   loading = false,
 }: GroupSelectorProps) => {
   const [newGroupName, setNewGroupName] = useState("")
@@ -40,6 +52,7 @@ export const GroupSelector = ({
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null)
   const [createLoading, setCreateLoading] = useState(false)
   const [joinLoading, setJoinLoading] = useState(false)
+  const [leaveGroupId, setLeaveGroupId] = useState<string | null>(null)
 
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -81,6 +94,14 @@ export const GroupSelector = ({
       setError(err.message || "Failed to join group.")
     } finally {
       setJoinLoading(false)
+    }
+  }
+
+  const handleLeaveGroup = () => {
+    if (leaveGroupId && onLeaveGroup) {
+      onLeaveGroup(leaveGroupId)
+      setLeaveGroupId(null)
+      toast.success("Left group successfully")
     }
   }
 
@@ -164,18 +185,29 @@ export const GroupSelector = ({
                             </div>
                           </div>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => copyGroupCode(selectedGroup.code, selectedGroup.id)}
-                          className="ml-2"
-                        >
-                          {copiedGroupId === selectedGroup.id ? (
-                            <Check className="h-4 w-4" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
+                        <div className="flex gap-2 ml-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => copyGroupCode(selectedGroup.code, selectedGroup.id)}
+                          >
+                            {copiedGroupId === selectedGroup.id ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          {onLeaveGroup && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setLeaveGroupId(selectedGroup.id)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <LogOut className="h-4 w-4" />
+                            </Button>
                           )}
-                        </Button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -280,6 +312,24 @@ export const GroupSelector = ({
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Leave Group Confirmation Dialog */}
+      <AlertDialog open={!!leaveGroupId} onOpenChange={(open) => !open && setLeaveGroupId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave Group</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to leave this group? You'll need the group code to rejoin later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleLeaveGroup} className="bg-red-500 hover:bg-red-600 focus:ring-red-500">
+              Leave Group
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

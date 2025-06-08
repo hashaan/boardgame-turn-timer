@@ -11,6 +11,7 @@ import type {
   GroupOverview,
 } from "@/types/leaderboard"
 import { groupApi, gameApi, playerApi, playthroughApi } from "@/lib/api"
+import { groupStorage } from "@/lib/group-storage"
 
 export const useLeaderboard = () => {
   const [groups, setGroups] = useState<Group[]>([])
@@ -53,9 +54,16 @@ export const useLeaderboard = () => {
     setLoading(true)
     try {
       console.time("Load Groups")
-      const response = await groupApi.getGroups()
+
+      // Get allowed group IDs from localStorage
+      const allowedGroupIds = groupStorage.getStoredGroupIds()
+      console.log("Allowed group IDs from localStorage:", allowedGroupIds)
+
+      const response = await groupApi.getGroups(allowedGroupIds)
       console.timeEnd("Load Groups")
+
       if (response.success && response.data) {
+        console.log("Loaded groups:", response.data)
         setGroups(response.data)
       } else {
         console.error("Failed to load groups:", response.error)
@@ -107,7 +115,7 @@ export const useLeaderboard = () => {
       const response = await playthroughApi.getPlaythroughsForGame(gameId)
       console.timeEnd("Load Playthroughs")
       if (response.success && response.data) {
-        console.log("Loaded playthroughs:", response.data) // Debug log
+        console.log("Loaded playthroughs:", response.data)
         setPlaythroughs(response.data)
       } else {
         console.error("Failed to load playthroughs:", response.error)
@@ -127,6 +135,10 @@ export const useLeaderboard = () => {
       throw new Error(response.error || "Failed to create group")
     }
 
+    // Store the group code when creating a group
+    groupStorage.storeGroupCode(response.data.id, response.data.code, response.data.name)
+    console.log("Stored group code for created group:", response.data.id)
+
     await loadGroups() // Refresh groups list
     return response.data
   }
@@ -138,6 +150,10 @@ export const useLeaderboard = () => {
     if (!response.success || !response.data) {
       throw new Error(response.error || "Failed to join group")
     }
+
+    // Store the group code when joining a group
+    groupStorage.storeGroupCode(response.data.id, response.data.code, response.data.name)
+    console.log("Stored group code for joined group:", response.data.id)
 
     await loadGroups() // Refresh groups list
     return response.data
@@ -199,6 +215,20 @@ export const useLeaderboard = () => {
     }
   }
 
+  const leaveGroup = (groupId: string) => {
+    // Remove group code from localStorage
+    groupStorage.removeGroupCode(groupId)
+    console.log("Removed group code for group:", groupId)
+
+    // If this was the selected group, deselect it
+    if (selectedGroupId === groupId) {
+      setSelectedGroupId(null)
+    }
+
+    // Refresh groups list
+    loadGroups()
+  }
+
   const getLeaderboardForGame = useCallback(
     (gameId: string | null): GameLeaderboard | null => {
       if (!gameId) return null
@@ -207,7 +237,7 @@ export const useLeaderboard = () => {
       if (!game) return null
 
       const gamePlaythroughs = playthroughs.filter((p) => p.game_id === gameId)
-      console.log("Game playthroughs for leaderboard:", gamePlaythroughs) // Debug log
+      console.log("Game playthroughs for leaderboard:", gamePlaythroughs)
 
       const playerStats: Record<
         string,
@@ -302,7 +332,7 @@ export const useLeaderboard = () => {
     loading,
     gameLoading,
     playthroughLoading,
-    playthroughs, // Export playthroughs directly
+    playthroughs,
 
     // Computed
     currentLeaderboard,
@@ -317,5 +347,6 @@ export const useLeaderboard = () => {
     setSelectedGroupId,
     setSelectedGameId,
     deletePlaythrough,
+    leaveGroup,
   }
 }

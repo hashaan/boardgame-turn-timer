@@ -11,8 +11,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2, Home, Timer } from "lucide-react"
 import { Toaster, toast } from "sonner"
+import Link from "next/link"
 
 export default function LeaderboardPage() {
   const {
@@ -130,11 +131,25 @@ export default function LeaderboardPage() {
       <div className="container mx-auto p-4 md:p-8 min-h-screen bg-slate-50">
         <Toaster richColors />
 
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <Button variant="ghost" onClick={handleBackToGroup} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to {currentGroupOverview?.group.name}
           </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/">
+                <Home className="w-4 h-4 mr-2" />
+                Home
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/dune-imperium">
+                <Timer className="w-4 h-4 mr-2" />
+                Timer
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <LeaderboardView
@@ -156,11 +171,25 @@ export default function LeaderboardPage() {
       <div className="container mx-auto p-4 md:p-8 min-h-screen bg-slate-50">
         <Toaster richColors />
 
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <Button variant="ghost" onClick={() => setSelectedGroupId(null)} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Groups
           </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/">
+                <Home className="w-4 h-4 mr-2" />
+                Home
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/dune-imperium">
+                <Timer className="w-4 h-4 mr-2" />
+                Timer
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <GroupOverview
@@ -218,6 +247,31 @@ export default function LeaderboardPage() {
   return (
     <div className="container mx-auto p-4 md:p-8 min-h-screen bg-slate-50">
       <Toaster richColors />
+
+      {/* Navigation Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <Button asChild variant="ghost">
+          <Link href="/">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Home
+          </Link>
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/">
+              <Home className="w-4 h-4 mr-2" />
+              Home
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/dune-imperium">
+              <Timer className="w-4 h-4 mr-2" />
+              Timer
+            </Link>
+          </Button>
+        </div>
+      </div>
+
       <header className="mb-8 text-center">
         <h1 className="text-4xl font-extrabold tracking-tight text-slate-800">Friend Group Leaderboards</h1>
         <p className="mt-2 text-lg text-muted-foreground">

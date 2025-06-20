@@ -83,3 +83,5 @@ export const SettingsPanel = ({
     </Card>
   )
 }
+
+export default SettingsPanel

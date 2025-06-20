@@ -117,7 +117,7 @@ export const SeasonManagementPanel = ({
               <div className="flex items-center justify-center mb-1">
                 <Users className="w-4 h-4 text-amber-600" />
               </div>
-              <div className="text-lg font-bold text-amber-800">{topPlayers.length}</div>
+              <div className="text-lg font-bold text-amber-800">{topPlayers?.length || 0}</div>
               <div className="text-xs text-amber-600">Active Players</div>
             </div>
             <div className="bg-white/60 rounded-lg p-3">
@@ -130,46 +130,55 @@ export const SeasonManagementPanel = ({
           </div>
 
           {/* Current Leaderboard Preview */}
-          {topPlayers.length > 0 && (
+          {topPlayers && topPlayers.length > 0 && (
             <div>
               <h4 className="font-semibold text-amber-800 mb-3 flex items-center">
                 <Trophy className="w-4 h-4 mr-2" />
                 Current Season Leaders
               </h4>
               <div className="space-y-2">
-                {topPlayers.slice(0, 4).map((player, index) => (
-                  <div
-                    key={player.playerId}
-                    className={`flex items-center justify-between p-3 rounded-lg ${
-                      index === 0
-                        ? "bg-gradient-to-r from-yellow-100 to-amber-100 border border-yellow-300"
-                        : "bg-white/60"
-                    }`}
-                  >
-                    <div className="flex items-center">
-                      <div
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${
-                          index === 0
-                            ? "bg-yellow-500 text-yellow-900"
-                            : index === 1
-                              ? "bg-gray-400 text-gray-800"
-                              : index === 2
-                                ? "bg-orange-500 text-orange-900"
-                                : "bg-purple-500 text-purple-900"
-                        }`}
-                      >
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="font-medium text-amber-800">{player.playerName}</div>
-                        <div className="text-xs text-amber-600">
-                          {player.totalGames} games • {player.winRate}% win rate
+                {topPlayers.slice(0, 4).map((player, index) => {
+                  // Safe access to player properties with fallbacks
+                  const playerName = player.player_name || player.playerName || "Unknown Player"
+                  const gamesPlayed = player.games_played || player.totalGames || 0
+                  const wins = player.wins || 0
+                  const winRateValue = player.win_rate_percentage || player.winRate || 0
+                  const winRate = typeof winRateValue === "number" ? winRateValue.toFixed(1) : "0.0"
+
+                  return (
+                    <div
+                      key={player.player_id || player.playerId || index}
+                      className={`flex items-center justify-between p-3 rounded-lg ${
+                        index === 0
+                          ? "bg-gradient-to-r from-yellow-100 to-amber-100 border border-yellow-300"
+                          : "bg-white/60"
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${
+                            index === 0
+                              ? "bg-yellow-500 text-yellow-900"
+                              : index === 1
+                                ? "bg-gray-400 text-gray-800"
+                                : index === 2
+                                  ? "bg-orange-500 text-orange-900"
+                                  : "bg-purple-500 text-purple-900"
+                          }`}
+                        >
+                          {index + 1}
+                        </div>
+                        <div>
+                          <div className="font-medium text-amber-800">{playerName}</div>
+                          <div className="text-xs text-amber-600">
+                            {gamesPlayed} games • {wins} wins • {winRate}% win rate
+                          </div>
                         </div>
                       </div>
+                      {index === 0 && <Crown className="w-4 h-4 text-yellow-600" />}
                     </div>
-                    {index === 0 && <Crown className="w-4 h-4 text-yellow-600" />}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -218,25 +227,31 @@ export const SeasonManagementPanel = ({
               This will conclude the current season and award badges to the top 4 players based on their performance.
             </AlertDialogDescription>
 
-            {topPlayers.length > 0 && (
+            {topPlayers && topPlayers.length > 0 && (
               <div className="bg-amber-50 p-4 rounded-lg border border-amber-200 mt-4">
                 <div className="font-semibold text-amber-800 mb-2">Badge Recipients:</div>
                 <div className="space-y-2">
                   {topPlayers.slice(0, 4).map((player, index) => {
                     const badgeTypes = ["champion", "runner_up", "bronze", "fourth"] as const
+                    const playerName = player.player_name || player.playerName || "Unknown Player"
+                    const playerId = player.player_id || player.playerId || `player-${index}`
+                    const gamesPlayed = player.games_played || player.totalGames || 0
+                    const winRateValue = player.win_rate_percentage || player.winRate || 0
+                    const winRate = typeof winRateValue === "number" ? winRateValue : 0
+
                     return (
-                      <div key={player.playerId} className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{player.playerName}</span>
+                      <div key={playerId} className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{playerName}</span>
                         <SeasonBadgeComponent
                           badge={{
                             id: "",
                             season_id: season.id,
-                            player_id: player.playerId,
-                            player_name: player.playerName,
+                            player_id: playerId,
+                            player_name: playerName,
                             rank: index + 1,
                             badge_type: badgeTypes[index],
-                            total_games: player.totalGames,
-                            win_rate: player.winRate,
+                            total_games: gamesPlayed,
+                            win_rate: winRate,
                             awarded_at: new Date().toISOString(),
                           }}
                           size="sm"

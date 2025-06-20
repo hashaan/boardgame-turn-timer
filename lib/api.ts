@@ -20,6 +20,7 @@ interface Game {
   id: string
   name: string
   group_id: string
+  game_type: string
   created_at: number
   created_by: string
 }
@@ -84,12 +85,12 @@ export const groupApi = {
 }
 
 export const gameApi = {
-  async createGame(groupId: string, name: string): Promise<ApiResponse<Game>> {
+  async createGame(groupId: string, name: string, gameType = "standard"): Promise<ApiResponse<Game>> {
     try {
       const response = await fetch(`${API_BASE}/groups/${groupId}/games`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, gameType }),
       })
 
       const data = await response.json()
@@ -141,6 +142,22 @@ export const playthroughApi = {
     try {
       const response = await fetch(`${API_BASE}/games/${gameId}/playthroughs`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ results }),
+      })
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error("API Error:", error)
+      return { success: false, error: "Network error" }
+    }
+  },
+
+  async updatePlaythrough(gameId: string, playthroughId: string, results: any[]): Promise<ApiResponse<any>> {
+    try {
+      const response = await fetch(`${API_BASE}/games/${gameId}/playthroughs/${playthroughId}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ results }),
       })

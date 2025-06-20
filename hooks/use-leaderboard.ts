@@ -38,12 +38,11 @@ export const useLeaderboard = () => {
     loadGroups()
   }, [])
 
-  // Load games, players, and season data when group is selected
+  // Load games, players when group is selected
   useEffect(() => {
     if (selectedGroupId) {
       loadGamesForGroup(selectedGroupId)
       loadPlayersForGroup(selectedGroupId)
-      loadCurrentSeason(selectedGroupId)
     } else {
       setGames([])
       setPlayers([])
@@ -52,14 +51,16 @@ export const useLeaderboard = () => {
     }
   }, [selectedGroupId])
 
-  // Load playthroughs when game is selected
+  // Load playthroughs and season data when game is selected
   useEffect(() => {
-    if (selectedGameId) {
+    if (selectedGameId && selectedGroupId) {
       loadPlaythroughsForGame(selectedGameId)
+      loadCurrentSeasonForGame(selectedGroupId, selectedGameId)
     } else {
       setPlaythroughs([])
+      setCurrentSeasonSummary(null)
     }
-  }, [selectedGameId])
+  }, [selectedGameId, selectedGroupId])
 
   const loadGroups = async () => {
     setLoading(true)
@@ -157,17 +158,29 @@ export const useLeaderboard = () => {
     }
   }
 
-  const loadCurrentSeason = async (groupId: string) => {
+  const loadCurrentSeasonForGame = async (groupId: string, gameId: string) => {
     setSeasonLoading(true)
     try {
       console.time("Load Current Season")
-      const response = await seasonApi.getCurrentSeason(groupId)
+      console.log("Loading season for groupId:", groupId, "gameId:", gameId)
+
+      const url = `/api/groups/${groupId}/seasons/current?gameId=${gameId}`
+      console.log("Fetching from URL:", url)
+
+      const response = await fetch(url)
+      const data = await response.json()
+
       console.timeEnd("Load Current Season")
-      if (response.success && response.data) {
-        setCurrentSeasonSummary(response.data)
+      console.log("Season API response:", data)
+
+      if (data.success && data.data) {
+        console.log("Frontend received season ID:", data.data.season?.id)
+        console.log("Setting season summary:", data.data)
+        setCurrentSeasonSummary(data.data)
       } else {
-        console.error("Failed to load current season:", response.error)
-        track("error_occurred", { error_type: "load_season_failed", error_message: response.error })
+        console.error("Failed to load current season:", data.error)
+        // Don't track this as an error since it might be expected for new games
+        setCurrentSeasonSummary(null)
       }
     } catch (error) {
       console.error("Failed to load current season:", error)
@@ -175,6 +188,7 @@ export const useLeaderboard = () => {
         error_type: "load_season_failed",
         error_message: error instanceof Error ? error.message : "Unknown error",
       })
+      setCurrentSeasonSummary(null)
     } finally {
       setSeasonLoading(false)
     }
@@ -220,9 +234,9 @@ export const useLeaderboard = () => {
     return response.data
   }
 
-  const createGame = async (groupId: string, name: string): Promise<Game> => {
+  const createGame = async (groupId: string, name: string, gameType = "standard"): Promise<Game> => {
     console.time("Create Game")
-    const response = await gameApi.createGame(groupId, name)
+    const response = await gameApi.createGame(groupId, name, gameType)
     console.timeEnd("Create Game")
     if (!response.success || !response.data) {
       track("error_occurred", { error_type: "create_game_failed", error_message: response.error })
@@ -230,7 +244,7 @@ export const useLeaderboard = () => {
     }
 
     // Track game creation
-    track("game_created", { game_name_length: response.data.name.length, has_group: !!response.data.group_id })
+    track("game_created", { game_name_length: response.data.name.length, game_type: gameType })
 
     await loadGamesForGroup(groupId)
     return response.data
@@ -256,14 +270,46 @@ export const useLeaderboard = () => {
     // Track playthrough addition
     track("playthrough_added", { player_count: results.length, has_game: !!gameId })
 
+    // Force refresh all data to ensure UI updates properly
+    await Promise.all([
+      loadPlaythroughsForGame(gameId),
+      selectedGroupId ? loadPlayersForGroup(selectedGroupId) : Promise.resolve(),
+      selectedGroupId && selectedGameId ? loadCurrentSeasonForGame(selectedGroupId, selectedGameId) : Promise.resolve(),
+    ])
+
+    // Small delay to ensure state updates propagate
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    return response.data
+  }
+
+  const updatePlaythrough = async (
+    gameId: string,
+    playthroughId: string,
+    results: { playerName: string; rank: number }[],
+  ): Promise<void> => {
+    console.time("Update Playthrough")
+    console.log("Updating playthrough:", playthroughId, "with results:", results)
+
+    const response = await playthroughApi.updatePlaythrough(gameId, playthroughId, results)
+    console.timeEnd("Update Playthrough")
+
+    if (!response.success) {
+      track("error_occurred", { error_type: "update_playthrough_failed", error_message: response.error })
+      throw new Error(response.error || "Failed to update playthrough")
+    }
+
+    console.log("Playthrough updated successfully:", response.data)
+
+    // Track playthrough update
+    track("playthrough_updated", { player_count: results.length, has_game: !!gameId })
+
     // Refresh playthroughs, players, and season data
     await Promise.all([
       loadPlaythroughsForGame(gameId),
       selectedGroupId ? loadPlayersForGroup(selectedGroupId) : Promise.resolve(),
-      selectedGroupId ? loadCurrentSeason(selectedGroupId) : Promise.resolve(),
+      selectedGroupId && selectedGameId ? loadCurrentSeasonForGame(selectedGroupId, selectedGameId) : Promise.resolve(),
     ])
-
-    return response.data
   }
 
   const deletePlaythrough = async (gameId: string, playthroughId: string): Promise<boolean> => {
@@ -282,8 +328,8 @@ export const useLeaderboard = () => {
 
       // Update local state and refresh season data
       setPlaythroughs((prev) => prev.filter((p) => p.id !== playthroughId))
-      if (selectedGroupId) {
-        loadCurrentSeason(selectedGroupId)
+      if (selectedGroupId && selectedGameId) {
+        loadCurrentSeasonForGame(selectedGroupId, selectedGameId)
       }
       return true
     } catch (error) {
@@ -297,7 +343,7 @@ export const useLeaderboard = () => {
   }
 
   const concludeSeason = async (): Promise<void> => {
-    if (!selectedGroupId) throw new Error("No group selected")
+    if (!selectedGroupId || !selectedGameId) throw new Error("No group or game selected")
 
     console.time("Conclude Season")
     const response = await seasonApi.concludeSeason(selectedGroupId)
@@ -313,8 +359,8 @@ export const useLeaderboard = () => {
 
     // Refresh season data and playthroughs to get the new season
     await Promise.all([
-      loadCurrentSeason(selectedGroupId),
-      selectedGameId ? loadPlaythroughsForGame(selectedGameId) : Promise.resolve(),
+      loadCurrentSeasonForGame(selectedGroupId, selectedGameId),
+      loadPlaythroughsForGame(selectedGameId),
     ])
   }
 
@@ -357,14 +403,22 @@ export const useLeaderboard = () => {
 
       // Filter playthroughs by current season if available
       let gamePlaythroughs = playthroughs.filter((p) => p.game_id === gameId)
+      console.log("All game playthroughs:", gamePlaythroughs)
+      console.log("Current season summary:", currentSeasonSummary)
 
       // If we have current season data, only show playthroughs from current season
       if (currentSeasonSummary?.season) {
+        const beforeFilter = gamePlaythroughs.length
+        console.log("Frontend season ID:", currentSeasonSummary.season.id)
+        console.log(
+          "Playthrough season IDs:",
+          gamePlaythroughs.map((p) => p.season_id),
+        )
         gamePlaythroughs = gamePlaythroughs.filter((p) => p.season_id === currentSeasonSummary.season.id)
         console.log(
-          "Filtered playthroughs for current season:",
-          currentSeasonSummary.season.season_number,
-          gamePlaythroughs,
+          `Filtered playthroughs for current season ${currentSeasonSummary.season.season_number}:`,
+          `${beforeFilter} -> ${gamePlaythroughs.length}`,
+          gamePlaythroughs.map((p) => ({ id: p.id, season_id: p.season_id, expected: currentSeasonSummary.season.id })),
         )
       }
 
@@ -477,6 +531,7 @@ export const useLeaderboard = () => {
     joinGroup,
     createGame,
     addPlaythrough,
+    updatePlaythrough,
     setSelectedGroupId,
     setSelectedGameId,
     deletePlaythrough,

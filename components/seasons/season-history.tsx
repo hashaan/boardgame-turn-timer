@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Calendar, Trophy, Target, ChevronDown, ChevronUp } from "lucide-react"
+import { Calendar, Trophy, Target, ChevronDown, ChevronUp, RefreshCw } from "lucide-react"
 import { SeasonBadgeComponent } from "./season-badge"
 import { Spinner } from "@/components/ui/spinner"
 import type { Season, SeasonBadge } from "@/types/seasons"
@@ -42,7 +42,9 @@ export const SeasonHistory = ({ groupId, onFetchSeasons, onFetchSeasonBadges }: 
     if (seasonBadges[seasonId]) return // Already loaded
 
     try {
+      console.log(`Loading badges for season ${seasonId}`)
       const badges = await onFetchSeasonBadges(groupId, seasonId)
+      console.log(`Loaded ${badges.length} badges for season ${seasonId}`, badges)
       setSeasonBadges((prev) => ({ ...prev, [seasonId]: badges }))
     } catch (error) {
       console.error("Failed to load season badges:", error)
@@ -114,6 +116,20 @@ export const SeasonHistory = ({ groupId, onFetchSeasons, onFetchSeasonBadges }: 
                         <Badge variant="outline" className="border-green-400 text-green-700">
                           Concluded
                         </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSeasonBadges((prev) => {
+                              const newBadges = { ...prev }
+                              delete newBadges[season.id]
+                              return newBadges
+                            })
+                            loadSeasonBadges(season.id)
+                          }}
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => toggleSeasonExpanded(season.id)}>
                           {expandedSeasons.has(season.id) ? (
                             <ChevronUp className="w-4 h-4" />

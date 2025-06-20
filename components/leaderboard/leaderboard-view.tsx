@@ -11,6 +11,7 @@ import { BarChart3, Trophy, Lock, Users, History, Crown } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useState } from "react"
+import { EnhancedAddPlaythroughForm } from "./enhanced-add-playthrough-form"
 
 interface LeaderboardViewProps {
   leaderboardData: GameLeaderboard | null
@@ -19,6 +20,7 @@ interface LeaderboardViewProps {
   currentSeasonSummary: SeasonSummary | null
   onAddPlaythrough: (gameId: string, results: any[]) => void
   onDeletePlaythrough: (gameId: string, playthroughId: string) => Promise<boolean>
+  onUpdatePlaythrough: (gameId: string, playthroughId: string, results: any[]) => Promise<void>
   onConcludeSeason: () => Promise<void>
   onFetchSeasons: (groupId: string) => Promise<any[]>
   onFetchSeasonBadges: (groupId: string, seasonId: string) => Promise<any[]>
@@ -35,6 +37,7 @@ export const LeaderboardView = ({
   currentSeasonSummary,
   onAddPlaythrough,
   onDeletePlaythrough,
+  onUpdatePlaythrough,
   onConcludeSeason,
   onFetchSeasons,
   onFetchSeasonBadges,
@@ -73,6 +76,13 @@ export const LeaderboardView = ({
     return await onDeletePlaythrough(game.id, playthroughId)
   }
 
+  const handleUpdatePlaythrough = async (playthroughId: string, results: any[]) => {
+    await onUpdatePlaythrough(game.id, playthroughId, results)
+  }
+
+  // Check if this is a Dune game
+  const isDuneGame = game.game_type === "dune"
+
   return (
     <div className="space-y-8">
       <header className="pb-4 border-b">
@@ -81,6 +91,12 @@ export const LeaderboardView = ({
             <h1 className="text-3xl font-bold tracking-tight flex items-center">
               <Trophy className="w-8 h-8 mr-3 text-amber-500" />
               {game.name} Leaderboard
+              {isDuneGame && (
+                <span className="ml-3 flex items-center text-sm text-amber-700 bg-amber-100 px-3 py-1 rounded-full">
+                  <Crown className="w-4 h-4 mr-1" />
+                  Dune: Imperium
+                </span>
+              )}
             </h1>
             <div className="flex items-center gap-2 mt-2">
               <div className="text-sm text-muted-foreground">
@@ -103,7 +119,7 @@ export const LeaderboardView = ({
         </div>
       </header>
 
-      {/* Season Management Panel */}
+      {/* Season Management Panel - only show if we have season data */}
       {currentSeasonSummary && (
         <SeasonManagementPanel
           seasonSummary={currentSeasonSummary}
@@ -152,23 +168,55 @@ export const LeaderboardView = ({
             </section>
 
             <section className="sticky top-4">
-              <AddPlaythroughForm
-                gameId={game.id}
-                gameName={game.name}
-                existingPlayers={existingPlayers}
-                onSubmit={handlePlaythroughSubmit}
-              />
+              {isDuneGame ? (
+                <div>
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center text-amber-800">
+                      <Crown className="w-5 h-5 mr-2" />
+                      <span className="font-semibold">Enhanced Dune: Imperium Tracking</span>
+                    </div>
+                    <p className="text-sm text-amber-700 mt-1">
+                      Record detailed statistics including leader selection, victory points, resources, and strategic
+                      archetypes.
+                    </p>
+                  </div>
+                  <EnhancedAddPlaythroughForm
+                    game={game}
+                    players={existingPlayers}
+                    onSubmit={handlePlaythroughSubmit}
+                    onCancel={() => {}} // No cancel needed in this context
+                  />
+                </div>
+              ) : (
+                <AddPlaythroughForm
+                  gameId={game.id}
+                  gameName={game.name}
+                  existingPlayers={existingPlayers}
+                  onSubmit={handlePlaythroughSubmit}
+                />
+              )}
             </section>
           </div>
         </TabsContent>
 
         <TabsContent value="history">
-          <PlaythroughHistory
-            playthroughs={playthroughs}
-            gameId={game.id}
-            onDeletePlaythrough={handleDeletePlaythrough}
-            loading={playthroughLoading}
-          />
+          {seasonLoading ? (
+            <div className="text-center py-16">
+              <Spinner size="lg" className="mx-auto mb-4" />
+              <p className="text-muted-foreground">Loading season data...</p>
+            </div>
+          ) : (
+            <PlaythroughHistory
+              playthroughs={playthroughs}
+              gameId={game.id}
+              existingPlayers={existingPlayers}
+              currentSeasonId={currentSeasonSummary?.season.id}
+              gameType={game.game_type}
+              onDeletePlaythrough={handleDeletePlaythrough}
+              onUpdatePlaythrough={handleUpdatePlaythrough}
+              loading={playthroughLoading}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="seasons">

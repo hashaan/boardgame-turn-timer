@@ -10,8 +10,9 @@ import { LeaderboardView } from "@/components/leaderboard/leaderboard-view"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ArrowLeft, Loader2, Home, Timer } from "lucide-react"
+import { ArrowLeft, Loader2, Home, Timer, Crown } from "lucide-react"
 import { Toaster, toast } from "sonner"
 import Link from "next/link"
 
@@ -34,6 +35,7 @@ export default function LeaderboardPage() {
     joinGroup,
     createGame,
     addPlaythrough,
+    updatePlaythrough,
     deletePlaythrough,
     setSelectedGroupId,
     setSelectedGameId,
@@ -44,6 +46,7 @@ export default function LeaderboardPage() {
   } = useLeaderboard()
 
   const [newGameName, setNewGameName] = useState("")
+  const [newGameType, setNewGameType] = useState("standard")
   const [showCreateGameDialog, setShowCreateGameDialog] = useState(false)
   const [gameCreateLoading, setGameCreateLoading] = useState(false)
 
@@ -82,8 +85,9 @@ export default function LeaderboardPage() {
 
     setGameCreateLoading(true)
     try {
-      const newGame = await createGame(selectedGroupId, newGameName.trim())
+      const newGame = await createGame(selectedGroupId, newGameName.trim(), newGameType)
       setNewGameName("")
+      setNewGameType("standard")
       setShowCreateGameDialog(false)
       setSelectedGameId(newGame.id)
       toast.success(`Game "${newGame.name}" added to the group!`)
@@ -102,6 +106,18 @@ export default function LeaderboardPage() {
     } catch (e: any) {
       console.error("Page: Error adding playthrough:", e)
       toast.error(e.message || "Error recording playthrough.")
+      throw e
+    }
+  }
+
+  const handleUpdatePlaythrough = async (gameId: string, playthroughId: string, results: any[]) => {
+    try {
+      console.log("Page: Updating playthrough:", playthroughId)
+      await updatePlaythrough(gameId, playthroughId, results)
+      toast.success(`Playthrough updated successfully!`)
+    } catch (e: any) {
+      console.error("Page: Error updating playthrough:", e)
+      toast.error(e.message || "Error updating playthrough.")
       throw e
     }
   }
@@ -173,6 +189,7 @@ export default function LeaderboardPage() {
           currentSeasonSummary={currentSeasonSummary}
           onAddPlaythrough={handleAddPlaythrough}
           onDeletePlaythrough={handleDeletePlaythrough}
+          onUpdatePlaythrough={handleUpdatePlaythrough}
           onConcludeSeason={handleConcludeSeason}
           onFetchSeasons={fetchSeasons}
           onFetchSeasonBadges={fetchSeasonBadges}
@@ -235,6 +252,28 @@ export default function LeaderboardPage() {
                   placeholder="e.g., Wingspan, Azul, Ticket to Ride"
                   disabled={gameCreateLoading}
                 />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="game-type">Game Type</Label>
+                <Select value={newGameType} onValueChange={setNewGameType} disabled={gameCreateLoading}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard Game</SelectItem>
+                    <SelectItem value="dune">
+                      <div className="flex items-center">
+                        <Crown className="w-4 h-4 mr-2" />
+                        Dune: Imperium
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {newGameType === "dune" && (
+                  <p className="text-xs text-muted-foreground">
+                    Enhanced tracking with leader selection, victory points, resources, and strategic archetypes.
+                  </p>
+                )}
               </div>
               <div className="flex justify-end gap-2">
                 <Button

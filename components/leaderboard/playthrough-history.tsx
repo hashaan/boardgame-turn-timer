@@ -233,7 +233,16 @@ export const PlaythroughHistory = ({
                   }`}
                 >
                   {getOrdinalSuffix(result.rank)}: {result.playerName}
-                  {result.victory_points && <span className="ml-1 opacity-75">({result.victory_points} VP)</span>}
+                  <span className="ml-1 opacity-75">
+                    {(() => {
+                      const vp = result.victory_points ?? result.finalVp ?? result.final_vp
+                      return vp !== null && vp !== undefined ? (
+                        `(${vp} VP)`
+                      ) : (
+                        <span className="text-slate-400 italic text-xs">(VP: not set)</span>
+                      )
+                    })()}
+                  </span>
                 </Badge>
               ))}
             {playthrough.results.length > 3 && (

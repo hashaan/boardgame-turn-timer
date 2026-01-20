@@ -52,31 +52,19 @@ export const PlaythroughDetails = ({ playthrough, gameType }: PlaythroughDetails
 
     if (!result) return null
 
-    const hasVictoryPoints = result.victory_points || result.finalVp || result.final_vp
-    const hasResources =
-      result.spice !== undefined ||
-      result.finalResourcesSpice !== undefined ||
-      result.final_resources_spice !== undefined ||
-      result.solari !== undefined ||
-      result.finalResourcesSolari !== undefined ||
-      result.final_resources_solari !== undefined ||
-      result.water !== undefined ||
-      result.finalResourcesWater !== undefined ||
-      result.final_resources_water !== undefined ||
-      result.troops !== undefined ||
-      result.finalResourcesTroops !== undefined ||
-      result.final_resources_troops !== undefined
+    const victoryPoints = result.victory_points ?? result.finalVp ?? result.final_vp ?? null
+    const spice = result.spice ?? result.finalResourcesSpice ?? result.final_resources_spice ?? null
+    const solari = result.solari ?? result.finalResourcesSolari ?? result.final_resources_solari ?? null
+    const water = result.water ?? result.finalResourcesWater ?? result.final_resources_water ?? null
+    const troops = result.troops ?? result.finalResourcesTroops ?? result.final_resources_troops ?? null
+    const cardsTrashed = result.cards_trashed ?? result.cardsTrashed ?? null
+    const finalDeckSize = result.cards_in_deck ?? result.finalDeckSize ?? result.final_deck_size ?? null
+    const archetype = result.strategic_archetype ?? result.strategic_archetype_name ?? null
 
-    const hasDeckStats =
-      result.cards_trashed !== undefined ||
-      result.cardsTrashed !== undefined ||
-      result.cards_in_deck !== undefined ||
-      result.finalDeckSize !== undefined ||
-      result.final_deck_size !== undefined
+    const hasAnyStats = victoryPoints !== null || spice !== null || solari !== null || water !== null || 
+                        troops !== null || cardsTrashed !== null || finalDeckSize !== null || archetype !== null
 
-    const hasArchetype = result.strategic_archetype || result.strategic_archetype_name
-
-    if (!hasVictoryPoints && !hasResources && !hasDeckStats && !hasArchetype) {
+    if (!hasAnyStats) {
       return (
         <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded mt-2">
           No advanced stats recorded for this player
@@ -87,88 +75,90 @@ export const PlaythroughDetails = ({ playthrough, gameType }: PlaythroughDetails
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
         {/* Victory Points */}
-        {hasVictoryPoints && (
-          <div className="space-y-2">
-            <h4 className="font-semibold text-sm flex items-center text-amber-700">
-              <Trophy className="w-4 h-4 mr-2" />
-              Victory Points: {hasVictoryPoints}
-            </h4>
-          </div>
-        )}
+        <div className="space-y-2">
+          <h4 className="font-semibold text-sm flex items-center text-amber-700">
+            <Trophy className="w-4 h-4 mr-2" />
+            {victoryPoints !== null ? `${victoryPoints} VP` : <span className="text-muted-foreground italic">VP: <span className="text-slate-400">not set</span></span>}
+          </h4>
+        </div>
 
         {/* Resources */}
-        {hasResources && (
-          <div className="space-y-2">
-            <h4 className="font-semibold text-sm text-slate-700">Resources</h4>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {(result.spice !== undefined ||
-                result.finalResourcesSpice !== undefined ||
-                result.final_resources_spice !== undefined) && (
-                <div className="flex items-center">
-                  <Flame className="w-3 h-3 mr-1 text-orange-500" />
-                  <span>Spice: {result.spice ?? result.finalResourcesSpice ?? result.final_resources_spice}</span>
-                </div>
+        <div className="space-y-2">
+          <h4 className="font-semibold text-sm text-slate-700">Resources</h4>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex items-center">
+              <Flame className="w-3 h-3 mr-1 text-orange-500" />
+              {spice !== null ? (
+                <span>Spice: {spice}</span>
+              ) : (
+                <span className="text-muted-foreground italic">Spice: <span className="text-slate-400">not set</span></span>
               )}
-              {(result.solari !== undefined ||
-                result.finalResourcesSolari !== undefined ||
-                result.final_resources_solari !== undefined) && (
-                <div className="flex items-center">
-                  <Coins className="w-3 h-3 mr-1 text-yellow-500" />
-                  <span>Solari: {result.solari ?? result.finalResourcesSolari ?? result.final_resources_solari}</span>
-                </div>
+            </div>
+            <div className="flex items-center">
+              <Coins className="w-3 h-3 mr-1 text-yellow-500" />
+              {solari !== null ? (
+                <span>Solari: {solari}</span>
+              ) : (
+                <span className="text-muted-foreground italic">Solari: <span className="text-slate-400">not set</span></span>
               )}
-              {(result.water !== undefined ||
-                result.finalResourcesWater !== undefined ||
-                result.final_resources_water !== undefined) && (
-                <div className="flex items-center">
-                  <Droplets className="w-3 h-3 mr-1 text-blue-500" />
-                  <span>Water: {result.water ?? result.finalResourcesWater ?? result.final_resources_water}</span>
-                </div>
+            </div>
+            <div className="flex items-center">
+              <Droplets className="w-3 h-3 mr-1 text-blue-500" />
+              {water !== null ? (
+                <span>Water: {water}</span>
+              ) : (
+                <span className="text-muted-foreground italic">Water: <span className="text-slate-400">not set</span></span>
               )}
-              {(result.troops !== undefined ||
-                result.finalResourcesTroops !== undefined ||
-                result.final_resources_troops !== undefined) && (
-                <div className="flex items-center">
-                  <Users className="w-3 h-3 mr-1 text-red-500" />
-                  <span>Troops: {result.troops ?? result.finalResourcesTroops ?? result.final_resources_troops}</span>
-                </div>
+            </div>
+            <div className="flex items-center">
+              <Users className="w-3 h-3 mr-1 text-red-500" />
+              {troops !== null ? (
+                <span>Troops: {troops}</span>
+              ) : (
+                <span className="text-muted-foreground italic">Troops: <span className="text-slate-400">not set</span></span>
               )}
             </div>
           </div>
-        )}
+        </div>
 
         {/* Deck Statistics */}
-        {hasDeckStats && (
-          <div className="space-y-2">
-            <h4 className="font-semibold text-sm flex items-center text-slate-700">
-              <Cards className="w-4 h-4 mr-2" />
-              Deck Stats
-            </h4>
-            <div className="text-xs text-muted-foreground space-y-1">
-              {(result.cards_trashed !== undefined || result.cardsTrashed !== undefined) && (
-                <div>Cards Trashed: {result.cards_trashed ?? result.cardsTrashed}</div>
+        <div className="space-y-2">
+          <h4 className="font-semibold text-sm flex items-center text-slate-700">
+            <Cards className="w-4 h-4 mr-2" />
+            Deck Stats
+          </h4>
+          <div className="text-xs space-y-1">
+            <div>
+              {cardsTrashed !== null ? (
+                <>Cards Trashed: {cardsTrashed}</>
+              ) : (
+                <span className="text-muted-foreground italic">Cards Trashed: <span className="text-slate-400">not set</span></span>
               )}
-              {(result.cards_in_deck !== undefined ||
-                result.finalDeckSize !== undefined ||
-                result.final_deck_size !== undefined) && (
-                <div>Final Deck Size: {result.cards_in_deck ?? result.finalDeckSize ?? result.final_deck_size}</div>
+            </div>
+            <div>
+              {finalDeckSize !== null ? (
+                <>Final Deck Size: {finalDeckSize}</>
+              ) : (
+                <span className="text-muted-foreground italic">Final Deck Size: <span className="text-slate-400">not set</span></span>
               )}
             </div>
           </div>
-        )}
+        </div>
 
         {/* Strategic Archetype */}
-        {hasArchetype && (
-          <div className="space-y-2">
-            <h4 className="font-semibold text-sm flex items-center text-slate-700">
-              <Zap className="w-4 h-4 mr-2" />
-              Strategy
-            </h4>
+        <div className="space-y-2">
+          <h4 className="font-semibold text-sm flex items-center text-slate-700">
+            <Zap className="w-4 h-4 mr-2" />
+            Strategy
+          </h4>
+          {archetype ? (
             <Badge variant="outline" className="text-xs">
-              {result.strategic_archetype || result.strategic_archetype_name}
+              {archetype}
             </Badge>
-          </div>
-        )}
+          ) : (
+            <span className="text-xs text-muted-foreground italic">Strategy: <span className="text-slate-400">not set</span></span>
+          )}
+        </div>
       </div>
     )
   }
@@ -245,12 +235,14 @@ export const PlaythroughDetails = ({ playthrough, gameType }: PlaythroughDetails
                             </div>
                           )}
                         </div>
-                        {victoryPoints && (
-                          <div className="flex items-center text-sm font-semibold text-amber-700">
-                            <Trophy className="w-4 h-4 mr-1" />
-                            {victoryPoints} VP
-                          </div>
-                        )}
+                        <div className="flex items-center text-sm font-semibold text-amber-700">
+                          <Trophy className="w-4 h-4 mr-1" />
+                          {victoryPoints !== null && victoryPoints !== undefined ? (
+                            <span>{victoryPoints} VP</span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-xs">VP: <span className="text-slate-400">not set</span></span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Advanced Stats for Dune Games */}

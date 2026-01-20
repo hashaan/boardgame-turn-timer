@@ -10,10 +10,12 @@ import { ControlPanel } from "@/components/ControlPanel"
 import { PlayerCard } from "@/components/PlayerCard"
 import { GameInfo } from "@/components/GameInfo"
 import { MobileCardNavigation } from "@/components/MobileCardNavigation"
+import { PlaythroughFormSection } from "@/components/leaderboard/playthrough-form-section"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Trophy, Home } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
+import { Toaster } from "sonner"
 
 export default function DuneImperiumTimer() {
   const {
@@ -74,6 +76,7 @@ export default function DuneImperiumTimer() {
     if (!isTransitioning) {
       setCurrentPlayerIndex(nextPlayerIndex)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTransitioning, nextPlayerIndex])
 
   useKeyboardShortcuts({
@@ -147,6 +150,7 @@ export default function DuneImperiumTimer() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 p-3 md:p-4">
+      <Toaster richColors />
       <div className="max-w-6xl mx-auto">
         {/* Navigation Header */}
         <div className="flex items-center justify-between mb-6">
@@ -171,6 +175,9 @@ export default function DuneImperiumTimer() {
             </Button>
           </div>
         </div>
+
+        {/* Playthrough Form Section */}
+        <PlaythroughFormSection />
 
         <Header
           currentTurnTime={getCurrentTurnTime()}

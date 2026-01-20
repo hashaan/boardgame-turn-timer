@@ -11,6 +11,7 @@ export interface Game {
   id: string
   name: string
   group_id: string // Games belong to groups
+  game_type?: string // Game type (e.g., 'dune', 'standard')
   created_at: string // Change from number to string
   created_by: string
 }

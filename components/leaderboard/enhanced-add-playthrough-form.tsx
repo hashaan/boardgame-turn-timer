@@ -99,14 +99,24 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Add cache-busting query parameter to force fresh data
+        const timestamp = new Date().getTime()
         const [leadersRes, archetypesRes] = await Promise.all([
-          fetch("/api/leaders"),
+          fetch(`/api/leaders?t=${timestamp}`, {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+            },
+          }),
           fetch("/api/strategic-archetypes"),
         ])
 
         if (leadersRes.ok) {
           const leadersData = await leadersRes.json()
+          console.log(`[Enhanced Form] Loaded ${leadersData.data?.length || 0} leaders`)
           setLeaders(leadersData.data || [])
+        } else {
+          console.error("Failed to fetch leaders:", leadersRes.status, leadersRes.statusText)
         }
 
         if (archetypesRes.ok) {
@@ -141,6 +151,13 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
     const newResults = [...results]
     newResults[index] = { ...newResults[index], [field]: value }
     setResults(newResults)
+  }
+
+  // Helper function to parse number input, allowing 0 as a valid value
+  const parseNumberInput = (value: string): number | undefined => {
+    if (value === "" || value.trim() === "") return undefined
+    const parsed = Number.parseInt(value, 10)
+    return isNaN(parsed) ? undefined : parsed
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -343,8 +360,8 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`vp-${index}`}
                           type="number"
-                          value={result.finalVp || ""}
-                          onChange={(e) => updatePlayer(index, "finalVp", Number.parseInt(e.target.value) || undefined)}
+                          value={result.finalVp ?? ""}
+                          onChange={(e) => updatePlayer(index, "finalVp", parseNumberInput(e.target.value))}
                           placeholder="Final VP"
                         />
                       </div>
@@ -373,9 +390,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`spice-${index}`}
                           type="number"
-                          value={result.finalResourcesSpice || ""}
+                          value={result.finalResourcesSpice ?? ""}
                           onChange={(e) =>
-                            updatePlayer(index, "finalResourcesSpice", Number.parseInt(e.target.value) || undefined)
+                            updatePlayer(index, "finalResourcesSpice", parseNumberInput(e.target.value))
                           }
                           placeholder="Final spice"
                         />
@@ -386,9 +403,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`solari-${index}`}
                           type="number"
-                          value={result.finalResourcesSolari || ""}
+                          value={result.finalResourcesSolari ?? ""}
                           onChange={(e) =>
-                            updatePlayer(index, "finalResourcesSolari", Number.parseInt(e.target.value) || undefined)
+                            updatePlayer(index, "finalResourcesSolari", parseNumberInput(e.target.value))
                           }
                           placeholder="Final solari"
                         />
@@ -399,9 +416,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`water-${index}`}
                           type="number"
-                          value={result.finalResourcesWater || ""}
+                          value={result.finalResourcesWater ?? ""}
                           onChange={(e) =>
-                            updatePlayer(index, "finalResourcesWater", Number.parseInt(e.target.value) || undefined)
+                            updatePlayer(index, "finalResourcesWater", parseNumberInput(e.target.value))
                           }
                           placeholder="Final water"
                         />
@@ -412,9 +429,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`troops-${index}`}
                           type="number"
-                          value={result.finalResourcesTroops || ""}
+                          value={result.finalResourcesTroops ?? ""}
                           onChange={(e) =>
-                            updatePlayer(index, "finalResourcesTroops", Number.parseInt(e.target.value) || undefined)
+                            updatePlayer(index, "finalResourcesTroops", parseNumberInput(e.target.value))
                           }
                           placeholder="Final troops"
                         />
@@ -425,9 +442,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`trashed-${index}`}
                           type="number"
-                          value={result.cardsTrashed || ""}
+                          value={result.cardsTrashed ?? ""}
                           onChange={(e) =>
-                            updatePlayer(index, "cardsTrashed", Number.parseInt(e.target.value) || undefined)
+                            updatePlayer(index, "cardsTrashed", parseNumberInput(e.target.value))
                           }
                           placeholder="Cards trashed"
                         />
@@ -438,9 +455,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
                         <Input
                           id={`deck-${index}`}
                           type="number"
-                          value={result.finalDeckSize || ""}
+                          value={result.finalDeckSize ?? ""}
                           onChange={(e) =>
-                            updatePlayer(index, "finalDeckSize", Number.parseInt(e.target.value) || undefined)
+                            updatePlayer(index, "finalDeckSize", parseNumberInput(e.target.value))
                           }
                           placeholder="Deck size"
                         />

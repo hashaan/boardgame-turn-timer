@@ -108,13 +108,21 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
       }
 
       try {
+        // Add cache-busting query parameter to force fresh data
+        const timestamp = new Date().getTime()
         const [leadersRes, archetypesRes] = await Promise.all([
-          fetch("/api/leaders"),
+          fetch(`/api/leaders?t=${timestamp}`, {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+            },
+          }),
           fetch("/api/strategic-archetypes"),
         ])
 
         if (leadersRes.ok) {
           const leadersData = await leadersRes.json()
+          console.log(`[Edit Form] Loaded ${leadersData.data?.length || 0} leaders`)
           setLeaders(leadersData.data || [])
         }
 
@@ -159,6 +167,13 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
     }
     setPlayerRanks(updatedRanks)
     setError(null) // Clear error when user makes changes
+  }
+
+  // Helper function to parse number input, allowing 0 as a valid value
+  const parseNumberInput = (value: string): number | undefined => {
+    if (value === "" || value.trim() === "") return undefined
+    const parsed = Number.parseInt(value, 10)
+    return isNaN(parsed) ? undefined : parsed
   }
 
   const selectExistingPlayer = (index: number, player: Player) => {
@@ -461,9 +476,9 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`vp-${index}`}
                           type="number"
-                          value={playerRank.finalVp || ""}
+                          value={playerRank.finalVp ?? ""}
                           onChange={(e) =>
-                            handlePlayerRankChange(index, "finalVp", Number.parseInt(e.target.value) || undefined)
+                            handlePlayerRankChange(index, "finalVp", parseNumberInput(e.target.value))
                           }
                           placeholder="VP"
                           className="h-8 text-sm"
@@ -477,12 +492,12 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`spice-${index}`}
                           type="number"
-                          value={playerRank.finalResourcesSpice || ""}
+                          value={playerRank.finalResourcesSpice ?? ""}
                           onChange={(e) =>
                             handlePlayerRankChange(
                               index,
                               "finalResourcesSpice",
-                              Number.parseInt(e.target.value) || undefined,
+                              parseNumberInput(e.target.value),
                             )
                           }
                           placeholder="Spice"
@@ -497,12 +512,12 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`solari-${index}`}
                           type="number"
-                          value={playerRank.finalResourcesSolari || ""}
+                          value={playerRank.finalResourcesSolari ?? ""}
                           onChange={(e) =>
                             handlePlayerRankChange(
                               index,
                               "finalResourcesSolari",
-                              Number.parseInt(e.target.value) || undefined,
+                              parseNumberInput(e.target.value),
                             )
                           }
                           placeholder="Solari"
@@ -517,12 +532,12 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`water-${index}`}
                           type="number"
-                          value={playerRank.finalResourcesWater || ""}
+                          value={playerRank.finalResourcesWater ?? ""}
                           onChange={(e) =>
                             handlePlayerRankChange(
                               index,
                               "finalResourcesWater",
-                              Number.parseInt(e.target.value) || undefined,
+                              parseNumberInput(e.target.value),
                             )
                           }
                           placeholder="Water"
@@ -537,12 +552,12 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`troops-${index}`}
                           type="number"
-                          value={playerRank.finalResourcesTroops || ""}
+                          value={playerRank.finalResourcesTroops ?? ""}
                           onChange={(e) =>
                             handlePlayerRankChange(
                               index,
                               "finalResourcesTroops",
-                              Number.parseInt(e.target.value) || undefined,
+                              parseNumberInput(e.target.value),
                             )
                           }
                           placeholder="Troops"
@@ -557,9 +572,9 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`trashed-${index}`}
                           type="number"
-                          value={playerRank.cardsTrashed || ""}
+                          value={playerRank.cardsTrashed ?? ""}
                           onChange={(e) =>
-                            handlePlayerRankChange(index, "cardsTrashed", Number.parseInt(e.target.value) || undefined)
+                            handlePlayerRankChange(index, "cardsTrashed", parseNumberInput(e.target.value))
                           }
                           placeholder="Trashed"
                           className="h-8 text-sm"
@@ -573,9 +588,9 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                         <Input
                           id={`deck-${index}`}
                           type="number"
-                          value={playerRank.finalDeckSize || ""}
+                          value={playerRank.finalDeckSize ?? ""}
                           onChange={(e) =>
-                            handlePlayerRankChange(index, "finalDeckSize", Number.parseInt(e.target.value) || undefined)
+                            handlePlayerRankChange(index, "finalDeckSize", parseNumberInput(e.target.value))
                           }
                           placeholder="Deck"
                           className="h-8 text-sm"

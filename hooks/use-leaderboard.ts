@@ -29,6 +29,34 @@ const debugTimeEnd = (label: string) => {
   if (DEBUG_LEADERBOARD) console.timeEnd(label)
 }
 
+type SeasonTopPlayer = SeasonSummary["topPlayers"][number]
+
+const buildSeasonTopPlayers = (rankings: PlayerRanking[] | undefined): SeasonTopPlayer[] => {
+  return (rankings ?? []).map((player) => {
+    const totalGames = player.totalPlaythroughs
+    const wins = player.rankCounts.first
+    const winRate = totalGames > 0 ? Number(((wins / totalGames) * 100).toFixed(2)) : 0
+    const averageRank =
+      player.chips.length > 0
+        ? Number((player.chips.reduce((sum, rank) => sum + rank, 0) / player.chips.length).toFixed(2))
+        : 0
+
+    return {
+      playerId: player.playerId,
+      playerName: player.playerName,
+      player_id: player.playerId,
+      player_name: player.playerName,
+      totalGames,
+      games_played: totalGames,
+      firstPlaces: wins,
+      wins,
+      winRate,
+      win_rate_percentage: winRate,
+      averageRank,
+    }
+  })
+}
+
 
 export const useLeaderboard = () => {
   const [groups, setGroups] = useState<Group[]>([])
@@ -202,21 +230,17 @@ export const useLeaderboard = () => {
       debugTime("Load Current Season")
       debugLog("Loading season for groupId:", groupId, "gameId:", gameId)
 
-      const url = `/api/groups/${groupId}/seasons/current?gameId=${gameId}`
-      debugLog("Fetching from URL:", url)
-
-      const response = await fetch(url)
-      const data = await response.json()
+      const response = await seasonApi.getCurrentSeason(groupId, gameId)
 
       debugTimeEnd("Load Current Season")
-      debugLog("Season API response:", data)
+      debugLog("Season API response:", response)
 
-      if (data.success && data.data) {
-        debugLog("Frontend received season ID:", data.data.season?.id)
-        debugLog("Setting season summary:", data.data)
-        setCurrentSeasonSummary(data.data)
+      if (response.success && response.data) {
+        debugLog("Frontend received season ID:", response.data.season?.id)
+        debugLog("Setting season summary:", response.data)
+        setCurrentSeasonSummary(response.data)
       } else {
-        console.error("Failed to load current season:", data.error)
+        console.error("Failed to load current season:", response.error)
         // Don't track this as an error since it might be expected for new games
         setCurrentSeasonSummary(null)
       }
@@ -537,6 +561,31 @@ export const useLeaderboard = () => {
     () => getLeaderboardForGame(selectedGameId),
     [getLeaderboardForGame, selectedGameId],
   )
+  const currentSeasonSummaryForDisplay = useMemo(() => {
+    if (!currentSeasonSummary) return null
+
+    const totalPlaythroughs =
+      currentSeasonSummary.totalPlaythroughs ??
+      currentSeasonSummary.season.total_playthroughs ??
+      playthroughs.filter((playthrough) => playthrough.season_id === currentSeasonSummary.season.id).length
+    const topPlayers =
+      currentSeasonSummary.topPlayers?.length > 0
+        ? currentSeasonSummary.topPlayers
+        : buildSeasonTopPlayers(currentLeaderboard?.rankings)
+
+    return {
+      ...currentSeasonSummary,
+      season: {
+        ...currentSeasonSummary.season,
+        total_playthroughs: totalPlaythroughs,
+      },
+      totalPlaythroughs,
+      topPlayers,
+      playerStats: currentSeasonSummary.playerStats?.length ? currentSeasonSummary.playerStats : topPlayers,
+      canConclude: totalPlaythroughs >= Number(currentSeasonSummary.season.min_games_threshold ?? 10),
+    }
+  }, [currentSeasonSummary, currentLeaderboard, playthroughs])
+
   const currentGroupOverview = useMemo(
     () => getGroupOverview(selectedGroupId),
     [getGroupOverview, selectedGroupId],
@@ -557,7 +606,7 @@ export const useLeaderboard = () => {
     playthroughLoading,
     seasonLoading,
     playthroughs,
-    currentSeasonSummary,
+    currentSeasonSummary: currentSeasonSummaryForDisplay,
 
     // Computed
     currentLeaderboard,

@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { AcquisitionsEditor } from "@/components/leaderboard/acquisitions-editor"
 import { DUNE_ACQUISITION_OPTIONS } from "@/lib/dune-acquisition-inventory"
 import { calculateBattleIconVpForResult } from "@/lib/dune-battle-icons"
+import { getDuneReferenceData } from "@/lib/dune-reference-data"
 import type { AcquisitionItemStatus, AcquisitionItemType, PlaythroughResultAcquisitionInput } from "@/types/dune-acquisitions"
 import { BarChart3, Calendar, ChevronDown, ChevronUp, Crown, Flag, Gem, Landmark, NotebookText, Plus, ScrollText, Shield, Swords, Trash2, Trophy, Users, Zap } from "lucide-react"
 
@@ -1891,21 +1892,9 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
   useEffect(() => {
     const loadData = async () => {
       try {
-        const timestamp = Date.now()
-        const [leadersRes, archetypesRes] = await Promise.all([
-          fetch(`/api/leaders?t=${timestamp}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } }),
-          fetch("/api/strategic-archetypes"),
-        ])
-
-        if (leadersRes.ok) {
-          const leadersData = await leadersRes.json()
-          setLeaders(leadersData.data || [])
-        }
-
-        if (archetypesRes.ok) {
-          const archetypesData = await archetypesRes.json()
-          setArchetypes(archetypesData.data || [])
-        }
+        const referenceData = await getDuneReferenceData()
+        setLeaders(referenceData.leaders)
+        setArchetypes(referenceData.archetypes)
       } catch (error) {
         console.error("Failed to load leaders/archetypes:", error)
       } finally {

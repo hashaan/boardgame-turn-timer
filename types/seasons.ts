@@ -22,22 +22,26 @@ export interface SeasonBadge {
   awarded_at: string
 }
 
+export interface SeasonTopPlayer {
+  playerId: string
+  playerName: string
+
+  player_id?: string
+  player_name?: string
+  games_played?: number
+  wins?: number
+  win_rate_percentage?: number
+  totalGames: number
+  firstPlaces: number
+  winRate: number
+  averageRank: number
+}
+
 export interface SeasonSummary {
   season: Season
   badges: SeasonBadge[]
   canConclude: boolean
-  topPlayers: {
-    playerId: string
-    playerName: string
-    
-    player_id?: string
-    player_name?: string
-    games_played?: number
-    wins?: number
-    win_rate_percentage?: number
-    totalGames: number
-    firstPlaces: number
-    winRate: number
-    averageRank: number
-  }[]
+  totalPlaythroughs?: number
+  playerStats?: SeasonTopPlayer[]
+  topPlayers: SeasonTopPlayer[]
 }

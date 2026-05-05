@@ -33,7 +33,17 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
   if (gameId) {
     const existingGameSeason = firstRow(
       await sql`
-        SELECT *
+        SELECT
+          id,
+          group_id,
+          game_id,
+          season_number,
+          start_date,
+          end_date,
+          status,
+          min_games_threshold,
+          total_playthroughs,
+          created_at
         FROM seasons
         WHERE group_id = ${groupId}
           AND game_id = ${gameId}
@@ -45,9 +55,13 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
 
     if (existingGameSeason) return existingGameSeason
 
-    const groupSeason = firstRow(
-      await sql`
-        SELECT *
+    const [groupSeason, maxSeason] = await Promise.all([
+      sql`
+        SELECT
+          id,
+          season_number,
+          start_date,
+          min_games_threshold
         FROM seasons
         WHERE group_id = ${groupId}
           AND game_id IS NULL
@@ -55,20 +69,19 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
         ORDER BY season_number DESC
         LIMIT 1
       `,
-    )
-
-    const maxSeason = firstRow(
-      await sql`
+      sql`
         SELECT COALESCE(MAX(season_number), 0) AS max_season_number
         FROM seasons
         WHERE group_id = ${groupId}
           AND game_id = ${gameId}
       `,
-    )
+    ])
 
-    const seasonNumber = groupSeason?.season_number ?? Number(maxSeason?.max_season_number ?? 0) + 1
-    const minGamesThreshold = groupSeason?.min_games_threshold ?? 10
-    const startDate = groupSeason?.start_date ?? null
+    const inheritedSeason = firstRow(groupSeason)
+    const maxSeasonRow = firstRow(maxSeason)
+    const seasonNumber = inheritedSeason?.season_number ?? Number(maxSeasonRow?.max_season_number ?? 0) + 1
+    const minGamesThreshold = inheritedSeason?.min_games_threshold ?? 10
+    const startDate = inheritedSeason?.start_date ?? null
 
     const created = firstRow(
       await sql`
@@ -94,7 +107,17 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
         DO UPDATE SET
           status = 'active',
           end_date = NULL
-        RETURNING *
+        RETURNING
+          id,
+          group_id,
+          game_id,
+          season_number,
+          start_date,
+          end_date,
+          status,
+          min_games_threshold,
+          total_playthroughs,
+          created_at
       `,
     )
 
@@ -104,7 +127,17 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
 
   const groupSeason = firstRow(
     await sql`
-      SELECT *
+      SELECT
+        id,
+        group_id,
+        game_id,
+        season_number,
+        start_date,
+        end_date,
+        status,
+        min_games_threshold,
+        total_playthroughs,
+        created_at
       FROM seasons
       WHERE group_id = ${groupId}
         AND game_id IS NULL
@@ -129,7 +162,17 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
     await sql`
       INSERT INTO seasons (group_id, season_number, status, min_games_threshold, total_playthroughs)
       VALUES (${groupId}, ${Number(maxSeason?.max_season_number ?? 0) + 1}, 'active', 10, 0)
-      RETURNING *
+      RETURNING
+        id,
+        group_id,
+        game_id,
+        season_number,
+        start_date,
+        end_date,
+        status,
+        min_games_threshold,
+        total_playthroughs,
+        created_at
     `,
   )
 
@@ -137,55 +180,73 @@ async function getOrCreateActiveSeason(groupId: string, gameId?: string | null) 
   return created
 }
 
+async function getSeasonPlayerStats(seasonId: string) {
+  return sql`
+    SELECT
+      pr.player_id AS "playerId",
+      pr.player_name AS "playerName",
+      pr.player_id AS player_id,
+      pr.player_name AS player_name,
+      COUNT(*)::int AS "totalGames",
+      COUNT(*)::int AS games_played,
+      COUNT(CASE WHEN pr.rank = 1 THEN 1 END)::int AS "firstPlaces",
+      COUNT(CASE WHEN pr.rank = 1 THEN 1 END)::int AS wins,
+      ROUND((COUNT(CASE WHEN pr.rank = 1 THEN 1 END)::decimal / NULLIF(COUNT(*), 0)) * 100, 2)::float AS "winRate",
+      ROUND((COUNT(CASE WHEN pr.rank = 1 THEN 1 END)::decimal / NULLIF(COUNT(*), 0)) * 100, 2)::float AS win_rate_percentage,
+      ROUND(AVG(pr.rank::decimal), 2)::float AS "averageRank"
+    FROM playthrough_results pr
+    INNER JOIN playthroughs p ON pr.playthrough_id = p.id
+    WHERE p.season_id = ${seasonId}
+    GROUP BY pr.player_id, pr.player_name
+    ORDER BY "firstPlaces" DESC, "winRate" DESC, "averageRank" ASC, "playerName" ASC
+  `
+}
+
 export async function GET(request: NextRequest, { params }: { params: { groupId: string } }) {
   try {
     const userId = getUserId(request)
     const { groupId } = params
     const gameId = request.nextUrl.searchParams.get("gameId")
+    const includeStats = request.nextUrl.searchParams.get("includeStats") === "true"
 
-    const access = await verifyGroupAccess(groupId, userId)
+    const [access, game] = await Promise.all([
+      verifyGroupAccess(groupId, userId),
+      gameId ? verifyGameBelongsToGroup(gameId, groupId) : Promise.resolve({ id: null }),
+    ])
+
     if (!access) {
       return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 })
     }
 
-    if (gameId) {
-      const game = await verifyGameBelongsToGroup(gameId, groupId)
-      if (!game) {
-        return NextResponse.json({ success: false, error: "Game not found for this group" }, { status: 404 })
-      }
+    if (gameId && !game) {
+      return NextResponse.json({ success: false, error: "Game not found for this group" }, { status: 404 })
     }
 
     const season = await getOrCreateActiveSeason(groupId, gameId)
 
-    const [playthroughCount] = await sql`
-      SELECT COUNT(*)::int AS total
-      FROM playthroughs
-      WHERE season_id = ${season.id}
-    `
+    const [playthroughCount, playerStats] = await Promise.all([
+      sql`
+        SELECT COUNT(*)::int AS total
+        FROM playthroughs
+        WHERE season_id = ${season.id}
+      `,
+      includeStats ? getSeasonPlayerStats(season.id) : Promise.resolve([]),
+    ])
 
-    const playerStats = await sql`
-      SELECT
-        pr.player_id AS "playerId",
-        pr.player_name AS "playerName",
-        COUNT(*)::int AS "totalGames",
-        COUNT(CASE WHEN pr.rank = 1 THEN 1 END)::int AS "firstPlaces",
-        ROUND((COUNT(CASE WHEN pr.rank = 1 THEN 1 END)::decimal / NULLIF(COUNT(*), 0)) * 100, 2)::float AS "winRate",
-        ROUND(AVG(pr.rank::decimal), 2)::float AS "averageRank"
-      FROM playthrough_results pr
-      INNER JOIN playthroughs p ON pr.playthrough_id = p.id
-      WHERE p.season_id = ${season.id}
-      GROUP BY pr.player_id, pr.player_name
-      ORDER BY "firstPlaces" DESC, "winRate" DESC, "averageRank" ASC, "playerName" ASC
-    `
-
-    const totalPlaythroughs = Number(playthroughCount?.total ?? 0)
+    const totalPlaythroughs = Number(firstRow(playthroughCount)?.total ?? 0)
+    const seasonWithFreshCount = {
+      ...season,
+      total_playthroughs: totalPlaythroughs,
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        season,
+        season: seasonWithFreshCount,
         totalPlaythroughs,
         playerStats,
+        topPlayers: playerStats,
+        badges: [],
         canConclude: totalPlaythroughs >= Number(season.min_games_threshold ?? 10),
       },
     })

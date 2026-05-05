@@ -145,6 +145,13 @@ export const PlaythroughHistory = ({
 
   // Group playthroughs by season only when the source list changes.
   const { currentSeasonPlaythroughs, pastSeasonPlaythroughs } = useMemo(() => {
+    if (!currentSeasonId) {
+      return {
+        currentSeasonPlaythroughs: playthroughs,
+        pastSeasonPlaythroughs: [],
+      }
+    }
+
     return {
       currentSeasonPlaythroughs: playthroughs.filter((p) => p.season_id === currentSeasonId),
       pastSeasonPlaythroughs: playthroughs.filter((p) => p.season_id !== currentSeasonId),

@@ -201,24 +201,17 @@ export const LeaderboardView = ({
         </TabsContent>
 
         <TabsContent value="history">
-          {seasonLoading ? (
-            <div className="text-center py-16">
-              <Spinner size="lg" className="mx-auto mb-4" />
-              <p className="text-muted-foreground">Loading season data...</p>
-            </div>
-          ) : (
-            <PlaythroughHistory
-              playthroughs={playthroughs}
-              gameId={game.id}
-              existingPlayers={existingPlayers}
-              currentSeasonId={currentSeasonSummary?.season.id}
-              gameType={game.game_type}
-              onDeletePlaythrough={handleDeletePlaythrough}
-              onUpdatePlaythrough={handleUpdatePlaythrough}
-              onLoadPlaythrough={onLoadPlaythrough}
-              loading={playthroughLoading}
-            />
-          )}
+          <PlaythroughHistory
+            playthroughs={playthroughs}
+            gameId={game.id}
+            existingPlayers={existingPlayers}
+            currentSeasonId={currentSeasonSummary?.season.id}
+            gameType={game.game_type}
+            onDeletePlaythrough={handleDeletePlaythrough}
+            onUpdatePlaythrough={handleUpdatePlaythrough}
+            onLoadPlaythrough={onLoadPlaythrough}
+            loading={playthroughLoading}
+          />
         </TabsContent>
 
         <TabsContent value="seasons">

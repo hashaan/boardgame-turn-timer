@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { CheckCircle, ChevronDown, ChevronRight, ChevronUp, Edit, Flag, Gem, Landmark, Loader2, NotebookText, PlusCircle, ScrollText, Shield, Swords, Trash2, Trophy, Zap } from "lucide-react"
 import { DUNE_ACQUISITION_OPTIONS } from "@/lib/dune-acquisition-inventory"
 import { calculateBattleIconVpForResult } from "@/lib/dune-battle-icons"
+import { getDuneReferenceData } from "@/lib/dune-reference-data"
 import type { Player } from "@/types/leaderboard"
 import type { AcquisitionItemStatus, AcquisitionItemType, PlaythroughResultAcquisitionInput } from "@/types/dune-acquisitions"
 import { getOrdinalSuffix } from "@/utils/leaderboard-utils"
@@ -1996,21 +1997,9 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
       }
 
       try {
-        const timestamp = Date.now()
-        const [leadersRes, archetypesRes] = await Promise.all([
-          fetch(`/api/leaders?t=${timestamp}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } }),
-          fetch("/api/strategic-archetypes"),
-        ])
-
-        if (leadersRes.ok) {
-          const leadersData = await leadersRes.json()
-          setLeaders(leadersData.data || [])
-        }
-
-        if (archetypesRes.ok) {
-          const archetypesData = await archetypesRes.json()
-          setArchetypes(archetypesData.data || [])
-        }
+        const referenceData = await getDuneReferenceData()
+        setLeaders(referenceData.leaders)
+        setArchetypes(referenceData.archetypes)
       } catch (error) {
         console.error("Failed to load leaders/archetypes:", error)
       } finally {

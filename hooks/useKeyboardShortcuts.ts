@@ -3,47 +3,59 @@
 import { useEffect } from "react"
 
 interface UseKeyboardShortcutsProps {
-  onNextTurn: () => void
-  onPreviousTurn: () => void
-  onToggleTimer: () => void
-  gameStarted: boolean
+    onNextTurn: () => void
+    onToggleTimer: () => void
+    onUndo?: () => void
+    gameStarted: boolean
 }
 
 export const useKeyboardShortcuts = ({
-  onNextTurn,
-  onPreviousTurn,
-  onToggleTimer,
-  gameStarted,
+    onNextTurn,
+    onToggleTimer,
+    onUndo,
+    gameStarted,
 }: UseKeyboardShortcutsProps) => {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore if user is typing in an input field
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-        return
-      }
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (
+                event.target instanceof HTMLInputElement ||
+                event.target instanceof HTMLTextAreaElement
+            ) {
+                return
+            }
 
-      switch (event.code) {
-        case "Space":
-          event.preventDefault()
-          // Space bar only pauses/resumes the timer
-          onToggleTimer()
-          break
-        case "ArrowRight":
-          event.preventDefault()
-          if (gameStarted) {
-            onNextTurn()
-          }
-          break
-        case "ArrowLeft":
-          event.preventDefault()
-          if (gameStarted) {
-            onPreviousTurn()
-          }
-          break
-      }
-    }
+            if (
+                (event.ctrlKey || event.metaKey) &&
+                event.key.toLowerCase() === "z"
+            ) {
+                if (gameStarted && onUndo) {
+                    event.preventDefault()
+                    onUndo()
+                }
+                return
+            }
 
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onNextTurn, onPreviousTurn, onToggleTimer, gameStarted])
+            switch (event.code) {
+                case "Space":
+                    event.preventDefault()
+                    onToggleTimer()
+                    break
+                case "ArrowRight":
+                    event.preventDefault()
+                    if (gameStarted) {
+                        onNextTurn()
+                    }
+                    break
+                case "ArrowLeft":
+                    event.preventDefault()
+                    if (gameStarted && onUndo) {
+                        onUndo()
+                    }
+                    break
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown)
+        return () => window.removeEventListener("keydown", handleKeyDown)
+    }, [onNextTurn, onToggleTimer, onUndo, gameStarted])
 }

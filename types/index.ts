@@ -1,3 +1,6 @@
+export type PlayerTurnStage = number | "reveal" | "done"
+export type TimerPhase = "player-turns" | "round-wrap-up"
+
 export interface Player {
     id: number
     name: string
@@ -7,8 +10,13 @@ export interface Player {
     turnsCompleted: number
     isActive: boolean
     color: string // unique color for each player
-    isRevealing: boolean // true if in reveal phase
+    isRevealing: boolean // on Reveal turn
     isOutOfRound: boolean // true if finished with round (after reveal)
+    agentTurnsTaken: number // completed Agent turns this round
+    extraTurnsThisRound: number // manual extra Agent turns this round
+    hasSwordmaster: boolean // adds one Agent turn
+    turnStartBank: number // bank before current turn bonus
+    turnBonusAppliedThisTurn: number // automatic turn bonus in seconds
 }
 
 export interface GameState {
@@ -17,6 +25,7 @@ export interface GameState {
     turnStartTime: number | null
     gameStarted: boolean
     currentRound: number
+    roundPhase: TimerPhase
     initialTime: number
     showSettings: boolean
     showAdjustButtons: boolean
@@ -45,8 +54,14 @@ export type HostState = {
         isRevealing: boolean
         timeRemaining: number
         isOutOfRound: boolean
+        agentTurnsTaken?: number
+        extraTurnsThisRound?: number
+        hasSwordmaster?: boolean
+        turnStartBank?: number
+        turnBonusAppliedThisTurn?: number
     }>
     currentRound: number
+    roundPhase: TimerPhase
     isRunning: boolean
     gameStarted: boolean
 }

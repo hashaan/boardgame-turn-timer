@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react"
 import { useSocket } from "@/hooks/useSocket"
-import type { HostState } from "@/types"
+import type { HostState, TimerPhase } from "@/types"
 import { useLocalStorage } from "./useLocalStorage"
 
 type HostSnapshotInput = {
@@ -14,8 +14,14 @@ type HostSnapshotInput = {
         isRevealing: boolean
         isOutOfRound: boolean
         timeRemaining: number
+        agentTurnsTaken?: number
+        extraTurnsThisRound?: number
+        hasSwordmaster?: boolean
+        turnStartBank?: number
+        turnBonusAppliedThisTurn?: number
     }>
     currentRound: number
+    roundPhase: TimerPhase
     isRunning: boolean
     gameStarted: boolean
 }
@@ -29,8 +35,7 @@ type UseHostRoomSyncProps = {
     onMarkPlayerRevealed: (playerId: number) => void
 }
 
-const makeRoomCode = () =>
-    Math.random().toString(36).slice(2, 8).toUpperCase()
+const makeRoomCode = () => Math.random().toString(36).slice(2, 8).toUpperCase()
 
 export function useHostRoomSync({
     syncSignal,
@@ -43,13 +48,16 @@ export function useHostRoomSync({
     const { connected, emit, on, off, socket } = useSocket()
 
     // Get or generate the room code
-    const [roomCode, setRoomCode] = useLocalStorage<string | null>("roomCode", null)
+    const [roomCode, setRoomCode] = useLocalStorage<string | null>(
+        "roomCode",
+        null,
+    )
 
     useEffect(() => {
         if (roomCode) return
         if (typeof window === "undefined") return
 
-        // check localStorage directly 
+        // Read localStorage as a fallback before creating a room code.
         const existing = window.localStorage.getItem("roomCode")
         if (existing) return
 
@@ -61,7 +69,8 @@ export function useHostRoomSync({
     const lastJoinedSocketId = useRef<string | null>(null)
 
     const buildSnapshot = useCallback((): HostState => {
-        const { players, currentRound, isRunning, gameStarted } = snapshotInputs
+        const { players, currentRound, roundPhase, isRunning, gameStarted } =
+            snapshotInputs
         return {
             sentAt: Date.now(),
             players: players.map((p) => ({
@@ -72,8 +81,14 @@ export function useHostRoomSync({
                 isRevealing: p.isRevealing,
                 isOutOfRound: p.isOutOfRound,
                 timeRemaining: p.timeRemaining,
+                agentTurnsTaken: p.agentTurnsTaken,
+                extraTurnsThisRound: p.extraTurnsThisRound,
+                hasSwordmaster: p.hasSwordmaster,
+                turnStartBank: p.turnStartBank,
+                turnBonusAppliedThisTurn: p.turnBonusAppliedThisTurn,
             })),
             currentRound,
+            roundPhase,
             isRunning,
             gameStarted,
         }
@@ -125,7 +140,15 @@ export function useHostRoomSync({
             off("game:revealTurn", onRevealTurn)
             off("game:markPlayerRevealed", handleMarkPlayerRevealed)
         }
-    }, [connected, on, off, onNextTurn, onPauseResume, onRevealTurn, onMarkPlayerRevealed])
+    }, [
+        connected,
+        on,
+        off,
+        onNextTurn,
+        onPauseResume,
+        onRevealTurn,
+        onMarkPlayerRevealed,
+    ])
 
     return {
         roomCode,

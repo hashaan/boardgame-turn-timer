@@ -12,7 +12,11 @@ import { Trophy, ChevronDown, ChevronUp, LogIn, Crown } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 
-export function PlaythroughFormSection() {
+interface PlaythroughFormSectionProps {
+  defaultOpen?: boolean
+}
+
+export function PlaythroughFormSection({ defaultOpen = false }: PlaythroughFormSectionProps) {
   const {
     groups,
     games,
@@ -23,9 +27,13 @@ export function PlaythroughFormSection() {
     selectedGroupId: hookSelectedGroupId,
   } = useLeaderboard()
 
-  const [showPlaythroughForm, setShowPlaythroughForm] = useState(false)
+  const [showPlaythroughForm, setShowPlaythroughForm] = useState(defaultOpen)
   const [formSelectedGroupId, setFormSelectedGroupId] = useState<string | null>(null)
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (defaultOpen) setShowPlaythroughForm(true)
+  }, [defaultOpen])
 
   // Sync form group selection with hook to trigger game loading
   useEffect(() => {
@@ -116,24 +124,29 @@ export function PlaythroughFormSection() {
   }
 
   return (
-    <Card className="mb-6 border-amber-200 bg-amber-50/50 text-amber-950 dark:border-white/[0.08] dark:[background-image:none] dark:bg-zinc-900/70 dark:text-zinc-200 dark:shadow-none">
+    <Card className="mb-5 border border-amber-200/80 bg-white/45 text-amber-950 shadow-none dark:border-white/[0.08] dark:[background-image:none] dark:bg-zinc-900/45 dark:text-zinc-200">
       <Collapsible open={showPlaythroughForm} onOpenChange={setShowPlaythroughForm}>
         <CollapsibleTrigger asChild>
-          <CardHeader className="cursor-pointer hover:bg-amber-100/50 transition-colors dark:hover:bg-white/[0.04]">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-amber-700 dark:text-amber-500/35" />
-                <CardTitle className="text-lg dark:text-zinc-200">Log Playthrough</CardTitle>
+          <CardHeader className="cursor-pointer p-3 transition-colors hover:bg-amber-50/80 dark:hover:bg-white/[0.04] md:p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Trophy className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-500/35" />
+                <CardTitle className="text-sm font-semibold dark:text-zinc-200 md:text-base">Log Playthrough</CardTitle>
+                {!showPlaythroughForm && (
+                  <span className="hidden text-xs text-amber-700/70 dark:text-zinc-500 md:inline">Shown after finish</span>
+                )}
               </div>
               {showPlaythroughForm ? (
-                <ChevronUp className="w-5 h-5 text-amber-700 dark:text-zinc-500" />
+                <ChevronUp className="h-4 w-4 shrink-0 text-amber-700 dark:text-zinc-500" />
               ) : (
-                <ChevronDown className="w-5 h-5 text-amber-700 dark:text-zinc-500" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-amber-700 dark:text-zinc-500" />
               )}
             </div>
-            <CardDescription className="dark:text-zinc-500">
-              Record your game results directly from the timer (no need to go to leaderboard page)
-            </CardDescription>
+            {showPlaythroughForm && (
+              <CardDescription className="text-xs dark:text-zinc-500">
+                Record final results and Dune stats for the completed game.
+              </CardDescription>
+            )}
           </CardHeader>
         </CollapsibleTrigger>
         <CollapsibleContent>

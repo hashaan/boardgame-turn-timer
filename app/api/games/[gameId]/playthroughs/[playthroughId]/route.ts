@@ -5,6 +5,7 @@ import {
   getSubmittedTrackedItems,
   replacePlaythroughResultItemsForResults,
 } from "@/lib/playthrough-result-items"
+import { createServerTiming } from "@/lib/server-timing"
 
 function firstDefined<T = unknown>(source: Record<string, any>, keys: string[]): T | undefined {
   for (const key of keys) {
@@ -524,6 +525,7 @@ function toResponseResult(row: any) {
 }
 
 export async function GET(request: NextRequest, { params }: { params: { gameId: string; playthroughId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { gameId, playthroughId } = params
@@ -537,7 +539,7 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
     `
 
     if (!game) {
-      return NextResponse.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
+      return timing.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
     }
 
     const [playthrough] = await sql`
@@ -557,7 +559,7 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
     `
 
     if (!playthrough) {
-      return NextResponse.json({ success: false, error: "Playthrough not found" }, { status: 404 })
+      return timing.json({ success: false, error: "Playthrough not found" }, { status: 404 })
     }
 
     const results = await sql`
@@ -574,10 +576,10 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
       results: results.map(toResponseResult),
     })
 
-    return NextResponse.json({ success: true, data: fullPlaythrough })
+    return timing.json({ success: true, data: fullPlaythrough })
   } catch (error) {
     console.error("Error fetching playthrough:", error)
-    return NextResponse.json(
+    return timing.json(
       {
         success: false,
         error: "Failed to fetch playthrough",
@@ -589,6 +591,7 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { gameId: string; playthroughId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { gameId, playthroughId } = params
@@ -602,7 +605,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { gameI
     `
 
     if (!game) {
-      return NextResponse.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
+      return timing.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
     }
 
     const [playthrough] = await sql`
@@ -612,7 +615,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { gameI
     `
 
     if (!playthrough) {
-      return NextResponse.json({ success: false, error: "Playthrough not found" }, { status: 404 })
+      return timing.json({ success: false, error: "Playthrough not found" }, { status: 404 })
     }
 
     await sql`
@@ -620,14 +623,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { gameI
       WHERE id = ${playthroughId}
     `
 
-    return NextResponse.json({ success: true })
+    return timing.json({ success: true })
   } catch (error) {
     console.error("Error deleting playthrough:", error)
-    return NextResponse.json({ success: false, error: "Failed to delete playthrough" }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to delete playthrough" }, { status: 500 })
   }
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { gameId: string; playthroughId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { gameId, playthroughId } = params
@@ -635,7 +639,7 @@ export async function PUT(request: NextRequest, { params }: { params: { gameId: 
     const { results, date } = body
 
     if (!results || !Array.isArray(results) || results.length === 0) {
-      return NextResponse.json({ success: false, error: "Results are required" }, { status: 400 })
+      return timing.json({ success: false, error: "Results are required" }, { status: 400 })
     }
 
     const [context] = await sql`
@@ -657,11 +661,11 @@ export async function PUT(request: NextRequest, { params }: { params: { gameId: 
     `
 
     if (!context) {
-      return NextResponse.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
+      return timing.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
     }
 
     if (!context.playthrough_id) {
-      return NextResponse.json({ success: false, error: "Playthrough not found" }, { status: 404 })
+      return timing.json({ success: false, error: "Playthrough not found" }, { status: 404 })
     }
 
     const game = {
@@ -672,18 +676,18 @@ export async function PUT(request: NextRequest, { params }: { params: { gameId: 
 
     const ranks = results.map((r: any) => nullableNumber(r.rank))
     if (ranks.some((rank: number | null) => rank === null)) {
-      return NextResponse.json({ success: false, error: "Each result must include a valid rank" }, { status: 400 })
+      return timing.json({ success: false, error: "Each result must include a valid rank" }, { status: 400 })
     }
 
     const uniqueRanks = new Set(ranks)
     if (ranks.length !== uniqueRanks.size) {
-      return NextResponse.json({ success: false, error: "Each player must have a unique rank" }, { status: 400 })
+      return timing.json({ success: false, error: "Each player must have a unique rank" }, { status: 400 })
     }
 
     const sortedRanks = [...ranks].sort((a, b) => Number(a) - Number(b))
     for (let i = 0; i < sortedRanks.length; i++) {
       if (sortedRanks[i] !== i + 1) {
-        return NextResponse.json(
+        return timing.json(
           { success: false, error: "Ranks must be consecutive starting from 1st place" },
           { status: 400 },
         )
@@ -692,7 +696,7 @@ export async function PUT(request: NextRequest, { params }: { params: { gameId: 
 
     const playerNames = results.map((result: any) => nullableText(result.playerName))
     if (playerNames.some((playerName: string | null) => !playerName)) {
-      return NextResponse.json({ success: false, error: "Each result must include playerName and rank" }, { status: 400 })
+      return timing.json({ success: false, error: "Each result must include playerName and rank" }, { status: 400 })
     }
 
     const normalisedPlayerNames = [...new Set(playerNames.map((playerName) => String(playerName).toLowerCase()))]
@@ -1128,10 +1132,10 @@ export async function PUT(request: NextRequest, { params }: { params: { gameId: 
       results: playthroughResults,
     }
 
-    return NextResponse.json({ success: true, data: response })
+    return timing.json({ success: true, data: response })
   } catch (error) {
     console.error("Error updating playthrough:", error)
-    return NextResponse.json(
+    return timing.json(
       {
         success: false,
         error: "Failed to update playthrough",

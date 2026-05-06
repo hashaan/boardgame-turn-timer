@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, generateUniqueGroupCode, getUserId } from "@/lib/db"
+import { createServerTiming } from "@/lib/server-timing"
 
 export async function GET(request: NextRequest) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
 
@@ -10,13 +12,13 @@ export async function GET(request: NextRequest) {
 
     if (!allowedGroupIds) {
       // If no group IDs provided, return empty array
-      return NextResponse.json({ success: true, data: [] })
+      return timing.json({ success: true, data: [] })
     }
 
     const groupIdArray = allowedGroupIds.split(",").filter(Boolean)
 
     if (groupIdArray.length === 0) {
-      return NextResponse.json({ success: true, data: [] })
+      return timing.json({ success: true, data: [] })
     }
 
     // Get groups that the user has codes for AND has database access to
@@ -30,20 +32,21 @@ export async function GET(request: NextRequest) {
       ORDER BY ga.accessed_at DESC
     `
 
-    return NextResponse.json({ success: true, data: groups })
+    return timing.json({ success: true, data: groups })
   } catch (error) {
     console.error("Error fetching groups:", error)
-    return NextResponse.json({ success: false, error: "Failed to fetch groups" }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to fetch groups" }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { name, description } = await request.json()
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return NextResponse.json({ success: false, error: "Group name is required" }, { status: 400 })
+      return timing.json({ success: false, error: "Group name is required" }, { status: 400 })
     }
 
     const trimmedName = name.trim()
@@ -58,7 +61,7 @@ export async function POST(request: NextRequest) {
     `
 
     if (existingGroup.length > 0) {
-      return NextResponse.json(
+      return timing.json(
         {
           success: false,
           error: `You already have access to a group named "${existingGroup[0].name}". Please choose a different name or join the existing group.`,
@@ -82,20 +85,20 @@ export async function POST(request: NextRequest) {
       VALUES (${newGroup.id}, ${userId}, 'admin')
     `
 
-    return NextResponse.json({ success: true, data: newGroup })
+    return timing.json({ success: true, data: newGroup })
   } catch (error) {
     console.error("Error creating group:", error)
 
     // Handle specific database errors
     if (error instanceof Error) {
       if (error.message.includes("duplicate key") || error.message.includes("unique constraint")) {
-        return NextResponse.json(
+        return timing.json(
           { success: false, error: "A group with this name already exists. Please choose a different name." },
           { status: 400 },
         )
       }
     }
 
-    return NextResponse.json({ success: false, error: "Failed to create group. Please try again." }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to create group. Please try again." }, { status: 500 })
   }
 }

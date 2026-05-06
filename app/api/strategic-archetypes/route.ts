@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server"
 import { sql } from "@/lib/db"
+import { createServerTiming } from "@/lib/server-timing"
 
 export async function GET() {
+  const timing = createServerTiming()
   try {
     const archetypes = await sql`
       SELECT id, name, description
@@ -9,9 +11,9 @@ export async function GET() {
       ORDER BY name
     `
 
-    return NextResponse.json({ success: true, data: archetypes })
+    return timing.json({ success: true, data: archetypes })
   } catch (error) {
     console.error("Error fetching strategic archetypes:", error)
-    return NextResponse.json({ success: false, error: "Failed to fetch strategic archetypes" }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to fetch strategic archetypes" }, { status: 500 })
   }
 }

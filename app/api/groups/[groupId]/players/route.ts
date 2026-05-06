@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, getUserId } from "@/lib/db"
+import { createServerTiming } from "@/lib/server-timing"
 
 export async function GET(request: NextRequest, { params }: { params: { groupId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { groupId } = params
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: { groupId:
     `
 
     if (!access) {
-      return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 })
+      return timing.json({ success: false, error: "Access denied" }, { status: 403 })
     }
 
     // Get all players for this group
@@ -25,9 +27,9 @@ export async function GET(request: NextRequest, { params }: { params: { groupId:
       ORDER BY name ASC
     `
 
-    return NextResponse.json({ success: true, data: players })
+    return timing.json({ success: true, data: players })
   } catch (error) {
     console.error("Error fetching players:", error)
-    return NextResponse.json({ success: false, error: "Failed to fetch players" }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to fetch players" }, { status: 500 })
   }
 }

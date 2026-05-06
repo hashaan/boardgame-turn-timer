@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { neon } from "@neondatabase/serverless"
+import { createServerTiming } from "@/lib/server-timing"
 
 // Force dynamic behaviour so leaders are never served from cache.
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  const timing = createServerTiming()
   try {
     const directSql = process.env.DATABASE_URL
         ? neon(process.env.DATABASE_URL)
@@ -52,7 +54,7 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json(
+    return timing.json(
         {
           success: true,
           data: leaders,
@@ -68,7 +70,7 @@ export async function GET() {
     )
   } catch (error) {
     console.error("[Leaders API] Error fetching leaders:", error)
-    return NextResponse.json(
+    return timing.json(
         { success: false, error: "Failed to fetch leaders" },
         { status: 500 }
     )

@@ -6,6 +6,7 @@ import {
   getSubmittedTrackedItems,
   replacePlaythroughResultItems,
 } from "@/lib/playthrough-result-items"
+import { createServerTiming } from "@/lib/server-timing"
 
 type Row = Record<string, any>
 
@@ -655,6 +656,7 @@ async function fetchCompletePlaythrough(playthroughId: string) {
 }
 
 export async function GET(request: NextRequest, { params }: { params: { gameId: string } }) {
+  const timing = createServerTiming()
   try {
     const { gameId } = params
     const includeDetails = ["1", "true", "full", "details"].includes(
@@ -681,7 +683,7 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
         }
       }
 
-      return NextResponse.json({ success: true, data: completePlaythroughs })
+      return timing.json({ success: true, data: completePlaythroughs })
     }
 
     const playthroughs = await sql`
@@ -736,10 +738,10 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
       ORDER BY p.timestamp DESC
     `
 
-    return NextResponse.json({ success: true, data: playthroughs })
+    return timing.json({ success: true, data: playthroughs })
   } catch (error) {
     console.error("Error fetching playthroughs:", error)
-    return NextResponse.json(
+    return timing.json(
       {
         success: false,
         error: "Failed to fetch playthroughs",
@@ -751,6 +753,7 @@ export async function GET(request: NextRequest, { params }: { params: { gameId: 
 }
 
 export async function POST(request: NextRequest, { params }: { params: { gameId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { gameId } = params
@@ -758,7 +761,7 @@ export async function POST(request: NextRequest, { params }: { params: { gameId:
     const { results } = body
 
     if (!results || !Array.isArray(results) || results.length === 0) {
-      return NextResponse.json({ success: false, error: "Results are required" }, { status: 400 })
+      return timing.json({ success: false, error: "Results are required" }, { status: 400 })
     }
 
     const gameInfo = firstRow(
@@ -771,7 +774,7 @@ export async function POST(request: NextRequest, { params }: { params: { gameId:
     )
 
     if (!gameInfo) {
-      return NextResponse.json({ success: false, error: "Game not found" }, { status: 404 })
+      return timing.json({ success: false, error: "Game not found" }, { status: 404 })
     }
 
     const season = await getOrCreateActiveSeason(gameId, gameInfo.group_id)
@@ -998,7 +1001,7 @@ export async function POST(request: NextRequest, { params }: { params: { gameId:
 
     const completePlaythrough = await fetchCompletePlaythrough(playthrough.id)
 
-    return NextResponse.json({
+    return timing.json({
       success: true,
       data: completePlaythrough
         ? { ...completePlaythrough, isSummary: false, hasFullDetails: true }
@@ -1006,7 +1009,7 @@ export async function POST(request: NextRequest, { params }: { params: { gameId:
     })
   } catch (error) {
     console.error("Error creating playthrough:", error)
-    return NextResponse.json(
+    return timing.json(
       {
         success: false,
         error: "Failed to create playthrough",

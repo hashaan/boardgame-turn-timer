@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, getUserId } from "@/lib/db"
+import { createServerTiming } from "@/lib/server-timing"
 
 export async function GET(request: NextRequest, { params }: { params: { groupId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { groupId } = params
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: { groupId:
     `
 
     if (!access) {
-      return NextResponse.json({ success: false, error: "Group not found or access denied" }, { status: 404 })
+      return timing.json({ success: false, error: "Group not found or access denied" }, { status: 404 })
     }
 
     try {
@@ -26,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { groupId:
         ORDER BY created_at DESC
       `
 
-      return NextResponse.json({ success: true, data: games })
+      return timing.json({ success: true, data: games })
     } catch (error: any) {
       // If game_type column doesn't exist, fall back to basic query
       if (error.message?.includes("game_type") && error.message?.includes("does not exist")) {
@@ -38,24 +40,25 @@ export async function GET(request: NextRequest, { params }: { params: { groupId:
           ORDER BY created_at DESC
         `
 
-        return NextResponse.json({ success: true, data: games })
+        return timing.json({ success: true, data: games })
       }
       throw error
     }
   } catch (error) {
     console.error("Error fetching games:", error)
-    return NextResponse.json({ success: false, error: "Failed to fetch games" }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to fetch games" }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest, { params }: { params: { groupId: string } }) {
+  const timing = createServerTiming()
   try {
     const userId = getUserId(request)
     const { groupId } = params
     const { name, gameType = "standard" } = await request.json()
 
     if (!name?.trim()) {
-      return NextResponse.json({ success: false, error: "Game name is required" }, { status: 400 })
+      return timing.json({ success: false, error: "Game name is required" }, { status: 400 })
     }
 
     // Verify user has access to this group
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: { groupId
     `
 
     if (!access) {
-      return NextResponse.json({ success: false, error: "Group not found or access denied" }, { status: 404 })
+      return timing.json({ success: false, error: "Group not found or access denied" }, { status: 404 })
     }
 
     let game
@@ -104,9 +107,9 @@ export async function POST(request: NextRequest, { params }: { params: { groupId
       // Don't fail the game creation if season creation fails
     }
 
-    return NextResponse.json({ success: true, data: game })
+    return timing.json({ success: true, data: game })
   } catch (error) {
     console.error("Error creating game:", error)
-    return NextResponse.json({ success: false, error: "Failed to create game" }, { status: 500 })
+    return timing.json({ success: false, error: "Failed to create game" }, { status: 500 })
   }
 }

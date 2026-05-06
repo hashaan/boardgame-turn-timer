@@ -10,7 +10,7 @@ export interface DuneStrategicArchetypeReference {
   description?: string
 }
 
-interface DuneReferenceData {
+export interface DuneReferenceData {
   leaders: DuneLeaderReference[]
   archetypes: DuneStrategicArchetypeReference[]
 }
@@ -47,4 +47,16 @@ export const getDuneReferenceData = async (): Promise<DuneReferenceData> => {
   }
 
   return duneReferenceDataPromise
+}
+
+export const seedDuneReferenceData = (data: Partial<DuneReferenceData> | null | undefined) => {
+  if (!data) return
+
+  const leaders = (data.leaders ?? []).map((leader) => ({
+    ...leader,
+    faction: leader.faction || "Other",
+  }))
+  const archetypes = data.archetypes ?? []
+
+  duneReferenceDataPromise = Promise.resolve({ leaders, archetypes })
 }

@@ -1,3 +1,5 @@
+import type { LeaderboardInitialState } from "@/types/leaderboard"
+
 // Updated API functions to use the real backend
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api"
 
@@ -117,6 +119,23 @@ export const playerApi = {
   async getPlayersForGroup(groupId: string): Promise<ApiResponse<Player[]>> {
     try {
       const response = await fetch(`${API_BASE}/groups/${groupId}/players`)
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error("API Error:", error)
+      return { success: false, error: "Network error" }
+    }
+  },
+}
+
+export const leaderboardApi = {
+  async getInitialState(groupId: string, gameId?: string | null): Promise<ApiResponse<LeaderboardInitialState>> {
+    try {
+      const params = new URLSearchParams()
+      if (gameId) params.set("gameId", gameId)
+
+      const query = params.toString()
+      const response = await fetch(`${API_BASE}/groups/${groupId}/leaderboard-initial-state${query ? `?${query}` : ""}`)
       const data = await response.json()
       return data
     } catch (error) {

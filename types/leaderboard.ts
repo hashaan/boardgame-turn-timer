@@ -1,3 +1,5 @@
+import type { SeasonSummary } from "./seasons"
+
 export interface Group {
   id: string
   name: string
@@ -234,3 +236,14 @@ export interface GroupOverview {
   totalPlayers: number
   totalPlaythroughs: number
 }
+
+export interface LeaderboardInitialState {
+  games: Game[]
+  players: Player[]
+  selectedGameId: string | null
+  playthroughs: Playthrough[]
+  currentSeasonSummary: SeasonSummary | null
+  leaders: Array<{ id: string; name: string; faction?: string | null }>
+  strategicArchetypes: Array<{ id: string; name: string; description?: string | null }>
+}
+

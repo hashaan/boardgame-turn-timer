@@ -11,8 +11,9 @@ import type {
   GroupOverview,
 } from "@/types/leaderboard"
 import type { SeasonSummary } from "@/types/seasons"
-import { groupApi, gameApi, playerApi, playthroughApi, seasonApi } from "@/lib/api"
+import { groupApi, gameApi, playerApi, playthroughApi, seasonApi, leaderboardApi } from "@/lib/api"
 import { groupStorage } from "@/lib/group-storage"
+import { seedDuneReferenceData } from "@/lib/dune-reference-data"
 import { track } from "@vercel/analytics/react"
 
 const DEBUG_LEADERBOARD = process.env.NEXT_PUBLIC_DEBUG_LEADERBOARD === "true"
@@ -81,29 +82,68 @@ export const useLeaderboard = () => {
     loadGroups()
   }, [])
 
-  // Load games, players when group is selected
   useEffect(() => {
     if (selectedGroupId) {
-      loadGamesForGroup(selectedGroupId)
-      loadPlayersForGroup(selectedGroupId)
+      loadLeaderboardInitialState(selectedGroupId, selectedGameId)
     } else {
       setGames([])
       setPlayers([])
+      setPlaythroughs([])
       setSelectedGameId(null)
       setCurrentSeasonSummary(null)
     }
-  }, [selectedGroupId])
+  }, [selectedGroupId, selectedGameId])
 
-  // Load playthroughs and season data when game is selected
-  useEffect(() => {
-    if (selectedGameId && selectedGroupId) {
-      loadPlaythroughsForGame(selectedGameId)
-      loadCurrentSeasonForGame(selectedGroupId, selectedGameId)
-    } else {
-      setPlaythroughs([])
-      setCurrentSeasonSummary(null)
+  const loadLeaderboardInitialState = async (groupId: string, gameId?: string | null) => {
+    setGameLoading(true)
+    setPlaythroughLoading(!!gameId)
+    setSeasonLoading(!!gameId)
+
+    try {
+      debugTime("Load Leaderboard Initial State")
+      const response = await leaderboardApi.getInitialState(groupId, gameId)
+      debugTimeEnd("Load Leaderboard Initial State")
+
+      if (!response.success || !response.data) {
+        console.error("Failed to load leaderboard initial state:", response.error)
+        track("error_occurred", {
+          error_type: "load_leaderboard_initial_state_failed",
+          error_message: response.error ?? "Unknown error",
+        })
+        return
+      }
+
+      const data = response.data
+      setGames(data.games)
+      setPlayers(data.players)
+      setPlaythroughs(data.playthroughs)
+      setCurrentSeasonSummary(data.currentSeasonSummary)
+      seedDuneReferenceData({
+        leaders: data.leaders.map((leader) => ({
+          ...leader,
+          faction: leader.faction ?? "",
+        })),
+        archetypes: data.strategicArchetypes.map((archetype) => ({
+          ...archetype,
+          description: archetype.description ?? undefined,
+        })),
+      })
+
+      if ((data.selectedGameId ?? null) !== (gameId ?? null)) {
+        setSelectedGameId(data.selectedGameId)
+      }
+    } catch (error) {
+      console.error("Failed to load leaderboard initial state:", error)
+      track("error_occurred", {
+        error_type: "load_leaderboard_initial_state_failed",
+        error_message: error instanceof Error ? error.message : "Unknown error",
+      })
+    } finally {
+      setGameLoading(false)
+      setPlaythroughLoading(false)
+      setSeasonLoading(false)
     }
-  }, [selectedGameId, selectedGroupId])
+  }
 
   const loadGroups = async () => {
     setLoading(true)

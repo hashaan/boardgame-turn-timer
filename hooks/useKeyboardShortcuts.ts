@@ -2,60 +2,89 @@
 
 import { useEffect } from "react"
 
-interface UseKeyboardShortcutsProps {
+type KeyboardShortcutOptions = {
     onNextTurn: () => void
     onToggleTimer: () => void
     onUndo?: () => void
+    onNextPlayer?: () => void
+    onPreviousPlayer?: () => void
     gameStarted: boolean
 }
 
-export const useKeyboardShortcuts = ({
+const isShortcutKey = (event: KeyboardEvent, key: string) =>
+    event.key === key || event.code === key
+
+const isEditableTarget = (target: EventTarget | null) => {
+    const element = target as HTMLElement | null
+    if (!element) return false
+
+    const tagName = element.tagName?.toLowerCase()
+    return (
+        element.isContentEditable ||
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select"
+    )
+}
+
+export function useKeyboardShortcuts({
     onNextTurn,
     onToggleTimer,
     onUndo,
+    onNextPlayer,
+    onPreviousPlayer,
     gameStarted,
-}: UseKeyboardShortcutsProps) => {
+}: KeyboardShortcutOptions) {
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (
-                event.target instanceof HTMLInputElement ||
-                event.target instanceof HTMLTextAreaElement
-            ) {
-                return
-            }
+            if (isEditableTarget(event.target)) return
 
-            if (
-                (event.ctrlKey || event.metaKey) &&
+            const isUndo =
+                (event.metaKey || event.ctrlKey) &&
                 event.key.toLowerCase() === "z"
-            ) {
-                if (gameStarted && onUndo) {
-                    event.preventDefault()
-                    onUndo()
-                }
+
+            if (isUndo && onUndo) {
+                event.preventDefault()
+                onUndo()
                 return
             }
 
-            switch (event.code) {
-                case "Space":
-                    event.preventDefault()
-                    onToggleTimer()
-                    break
-                case "ArrowRight":
-                    event.preventDefault()
-                    if (gameStarted) {
-                        onNextTurn()
-                    }
-                    break
-                case "ArrowLeft":
-                    event.preventDefault()
-                    if (gameStarted && onUndo) {
-                        onUndo()
-                    }
-                    break
+            if (
+                event.key === " " ||
+                event.key === "Spacebar" ||
+                event.code === "Space"
+            ) {
+                event.preventDefault()
+                onToggleTimer()
+                return
+            }
+
+            if (isShortcutKey(event, "Enter") && gameStarted) {
+                event.preventDefault()
+                onNextTurn()
+                return
+            }
+
+            if (isShortcutKey(event, "ArrowRight") && onNextPlayer) {
+                event.preventDefault()
+                onNextPlayer()
+                return
+            }
+
+            if (isShortcutKey(event, "ArrowLeft") && onPreviousPlayer) {
+                event.preventDefault()
+                onPreviousPlayer()
             }
         }
 
-        window.addEventListener("keydown", handleKeyDown)
-        return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [onNextTurn, onToggleTimer, onUndo, gameStarted])
+        window.addEventListener("keydown", handleKeyDown, true)
+        return () => window.removeEventListener("keydown", handleKeyDown, true)
+    }, [
+        gameStarted,
+        onNextPlayer,
+        onNextTurn,
+        onPreviousPlayer,
+        onToggleTimer,
+        onUndo,
+    ])
 }

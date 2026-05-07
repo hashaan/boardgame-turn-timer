@@ -3,6 +3,7 @@
 import type React from "react"
 import {
     Play,
+    Pause,
     Clock,
     Plus,
     GripVertical,
@@ -10,7 +11,6 @@ import {
     Edit2,
     Minus,
     Swords,
-    MousePointerClick,
     RotateCcw,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,6 +29,18 @@ import type { Player, PlayerTurnStage, TimerPhase } from "@/types"
 import { formatTime, getTurnProgressColor } from "@/utils"
 
 const BASE_AGENT_TURNS = 2
+const TURN_TIME_BONUS = 60
+
+const formatDurationCompact = (seconds: number): string => {
+    const safeSeconds = Math.max(0, Math.floor(seconds))
+    if (safeSeconds < 60) return `${safeSeconds}s`
+    return formatTime(safeSeconds)
+}
+
+const formatSignedDurationCompact = (seconds: number): string => {
+    const prefix = seconds >= 0 ? "+" : "−"
+    return `${prefix}${formatDurationCompact(Math.abs(seconds))}`
+}
 
 const AVAILABLE_COLORS = [
     {
@@ -56,12 +68,12 @@ const AVAILABLE_COLORS = [
         bar: "bg-purple-500",
     },
     {
-        value: "orange",
-        label: "Orange",
-        bg: "bg-orange-50 dark:bg-zinc-900/45",
-        border: "border-orange-200 dark:border-zinc-700/40",
-        text: "text-orange-700 dark:text-orange-300/50",
-        bar: "bg-orange-500",
+        value: "rose",
+        label: "Rose",
+        bg: "bg-rose-50 dark:bg-zinc-900/45",
+        border: "border-rose-200 dark:border-zinc-700/40",
+        text: "text-rose-700 dark:text-rose-300/55",
+        bar: "bg-rose-500",
     },
     {
         value: "red",
@@ -100,9 +112,12 @@ const AVAILABLE_COLORS = [
 interface PlayerCardProps {
     player: Player
     isActive: boolean
+    isTurnPlayer?: boolean
+    isSwitchedClock?: boolean
     currentTurnTime: number
     gameStarted: boolean
     isRunning?: boolean
+    autoResumeSeconds?: number | null
     initialTime: number
     showAdjustButtons: boolean
     showColorSelectors: boolean
@@ -127,8 +142,9 @@ interface PlayerCardProps {
 }
 
 const getPlayerColorStyles = (color: string) => {
+    const normalizedColor = color === "orange" ? "rose" : color
     const colorOption =
-        AVAILABLE_COLORS.find((c) => c.value === color) || AVAILABLE_COLORS[0]
+        AVAILABLE_COLORS.find((c) => c.value === normalizedColor) || AVAILABLE_COLORS[0]
     return colorOption
 }
 
@@ -140,12 +156,24 @@ const getAgentTurnLimit = (player: Player) => {
     )
 }
 
-const getTurnLabel = (player: Player) => {
+const getCurrentTurnLabel = (player: Player) => {
     if (player.isOutOfRound) return "Done this round"
     const agentTurnLimit = getAgentTurnLimit(player)
-    if (player.isRevealing || player.agentTurnsTaken >= agentTurnLimit)
+    if (player.isRevealing) return "Reveal"
+    const currentAgentTurn = Math.min(
+        Math.max(1, player.agentTurnsTaken),
+        agentTurnLimit,
+    )
+    return `Agent Turn ${currentAgentTurn}/${agentTurnLimit}`
+}
+
+const getUpcomingTurnLabel = (player: Player) => {
+    if (player.isOutOfRound) return "Done this round"
+    const agentTurnLimit = getAgentTurnLimit(player)
+    if (player.isRevealing || player.agentTurnsTaken >= agentTurnLimit) {
         return "Reveal"
-    return `Agent Turn ${Math.min(player.agentTurnsTaken + 1, agentTurnLimit)}/${agentTurnLimit}`
+    }
+    return `Agent Turn ${player.agentTurnsTaken + 1}/${agentTurnLimit}`
 }
 
 type TurnChipState = "completed" | "current" | "next" | "future"
@@ -153,9 +181,12 @@ type TurnChipState = "completed" | "current" | "next" | "future"
 export const PlayerCard = ({
     player,
     isActive,
+    isTurnPlayer = isActive,
+    isSwitchedClock = false,
     currentTurnTime,
     gameStarted,
     isRunning = false,
+    autoResumeSeconds = null,
     initialTime,
     showAdjustButtons,
     showColorSelectors,
@@ -180,68 +211,87 @@ export const PlayerCard = ({
 }: PlayerCardProps) => {
     const colors = getPlayerColorStyles(player.color)
     const turnProgressColor = getTurnProgressColor(currentTurnTime)
-    const isOvertime = currentTurnTime > 60
-    const turnTimeRemaining = Math.max(0, 60 - currentTurnTime)
-    const turnProgressPercentage = (turnTimeRemaining / 60) * 100
     const turnStartBank = Math.max(0, Number(player.turnStartBank ?? 0))
     const turnBonus = Math.max(0, Number(player.turnBonusAppliedThisTurn ?? 0))
-    const displayTimeRemaining =
-        isActive && gameStarted && !player.isOutOfRound
-            ? Math.max(
-                  0,
-                  (turnStartBank > 0 ? turnStartBank : player.timeRemaining) +
-                      turnBonus -
-                      currentTurnTime,
-              )
-            : player.timeRemaining
     const agentTurnLimit = getAgentTurnLimit(player)
     const completedAgentTurns = Math.min(player.agentTurnsTaken, agentTurnLimit)
-    const turnLabel = getTurnLabel(player)
+    const hasStartedSlot =
+        gameStarted &&
+        (turnBonus > 0 ||
+            completedAgentTurns > 0 ||
+            player.isRevealing ||
+            player.isOutOfRound)
+    const activeTurnBonusRemaining = Math.max(0, turnBonus - currentTurnTime)
+    const inactiveTurnBonusRemaining = Math.max(0, turnBonus)
+    const displayedTurnBonusRemaining =
+        isActive && gameStarted
+            ? activeTurnBonusRemaining
+            : inactiveTurnBonusRemaining
+    const isOvertime = isActive && gameStarted && currentTurnTime > turnBonus
+    const turnProgressPercentage = hasStartedSlot
+        ? Math.min(
+              100,
+              Math.max(
+                  0,
+                  (displayedTurnBonusRemaining / TURN_TIME_BONUS) * 100,
+              ),
+          )
+        : 0
+    const turnEfficiencyValue =
+        isActive && gameStarted
+            ? turnBonus - currentTurnTime
+            : Number(player.currentTurnEfficiency ?? 0)
+    const turnEfficiencyLabel = hasStartedSlot
+        ? formatSignedDurationCompact(turnEfficiencyValue)
+        : "—"
+    const turnBonusLabel = !hasStartedSlot
+        ? "not started"
+        : displayedTurnBonusRemaining > 0
+          ? `${formatDurationCompact(displayedTurnBonusRemaining)} left`
+          : "0s left"
+    const displayTimeRemaining =
+        isActive && gameStarted
+            ? Math.max(
+                  0,
+                  turnStartBank + turnBonus - currentTurnTime,
+              )
+            : player.timeRemaining
+    const currentTurnLabel = getCurrentTurnLabel(player)
+    const upcomingTurnLabel = getUpcomingTurnLabel(player)
     const activeAgentStage =
         player.isOutOfRound ||
         player.isRevealing ||
-        completedAgentTurns >= agentTurnLimit
+        completedAgentTurns === 0
             ? null
-            : completedAgentTurns + 1
+            : completedAgentTurns
     const showRemoveTurn = player.extraTurnsThisRound > 0
     const turnBadgeLabel = player.isOutOfRound
         ? "Done"
-        : `${isActive ? "Now" : "Next"}: ${turnLabel}`
+        : isActive
+          ? `${isRunning ? "Now" : "Paused"}: ${currentTurnLabel}`
+          : `Next: ${upcomingTurnLabel}`
     const progressLabel = player.isOutOfRound
-        ? "Revealed"
-        : `${completedAgentTurns}/${agentTurnLimit} agent turns complete`
+        ? "Reveal started"
+        : `${completedAgentTurns}/${agentTurnLimit} agent turns started`
     const isRoundWrapUp = roundPhase === "round-wrap-up"
     const isWaitingWhileClockRuns =
         gameStarted && isRunning && !isActive && !player.isOutOfRound
-    const canManualSwitch =
-        gameStarted &&
-        !isRoundWrapUp &&
-        !isActive &&
-        !player.isOutOfRound &&
-        Boolean(onManualSwitch)
     const canReopenTurn =
         gameStarted &&
         isRoundWrapUp &&
         player.isOutOfRound &&
         Boolean(onReopenTurn)
-    const showTurnBonusPulse =
-        isActive &&
-        gameStarted &&
-        !player.isOutOfRound &&
-        player.turnBonusAppliedThisTurn > 0 &&
-        currentTurnTime <= 3
 
     const getAgentChipState = (stage: number): TurnChipState => {
+        if (activeAgentStage === stage) return isActive ? "current" : "completed"
         if (player.isOutOfRound || stage <= completedAgentTurns) return "completed"
-        if (activeAgentStage === stage) return isActive ? "current" : "next"
+        if (stage === completedAgentTurns + 1) return "next"
         return "future"
     }
 
     const getRevealChipState = (): TurnChipState => {
         if (player.isOutOfRound) return "completed"
-        if (player.isRevealing || completedAgentTurns >= agentTurnLimit) {
-            return isActive ? "current" : "next"
-        }
+        if (player.isRevealing) return isActive ? "current" : "completed"
         return "future"
     }
 
@@ -258,7 +308,7 @@ export const PlayerCard = ({
         }
 
         if (state === "next") {
-            return `${base} border-slate-400 bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 dark:border-white/20 dark:bg-white/[0.04] dark:text-zinc-200 dark:ring-white/10 dark:hover:bg-white/[0.08]`
+            return `${base} border-slate-400 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/20 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:bg-white/[0.08]`
         }
 
         return `${base} border-slate-200 bg-white text-slate-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-500 dark:hover:bg-white/[0.07]`
@@ -277,25 +327,42 @@ export const PlayerCard = ({
                 onDrop(player.id)
             }}
             onClick={() => onPlayerClick?.(player.id)}
-            className={`transition-all duration-300 cursor-default touch-manipulation h-full ${
+            className={`group relative h-full overflow-hidden transition-all duration-300 cursor-default touch-manipulation ${
                 isActive
-                    ? "border-4 border-amber-500 bg-gradient-to-br from-amber-100 to-orange-100 shadow-xl text-amber-950 dark:border-amber-500/30 dark:[background-image:none] dark:bg-zinc-900/85 dark:text-zinc-100 dark:shadow-[0_0_48px_-12px_rgba(251,191,36,0.12)]"
+                    ? "border border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50 shadow-[0_16px_42px_rgba(217,119,6,0.16)] text-amber-950 dark:border-amber-400/15 dark:[background-image:none] dark:bg-zinc-900/85 dark:text-zinc-100"
                     : player.isOutOfRound
-                      ? "border-2 border-gray-300 bg-gray-100 opacity-70 dark:border-zinc-700/50 dark:bg-zinc-900/50 dark:opacity-75"
-                      : `border-2 ${colors.border} bg-white hover:shadow-md active:scale-[0.99] dark:bg-zinc-900/40 ${isWaitingWhileClockRuns ? "opacity-90 shadow-sm" : ""}`
+                      ? "border border-slate-200 bg-slate-50/60 text-slate-400 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 hover:text-slate-500 active:scale-[0.99] dark:border-zinc-700/40 dark:bg-zinc-900/45 dark:text-zinc-500 dark:hover:text-zinc-300"
+                      : `border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300 hover:bg-white hover:shadow-md active:scale-[0.99] dark:border-zinc-700/45 dark:bg-zinc-900/45 dark:text-zinc-300 ${isWaitingWhileClockRuns ? "shadow-sm" : ""}`
             }`}
             style={{
                 backfaceVisibility: "hidden",
                 WebkitBackfaceVisibility: "hidden",
-                borderWidth: isActive ? "4px" : "2px",
+                borderWidth: "1px",
                 borderStyle: "solid",
-                minHeight: "100%",
             }}
         >
-            <CardHeader className="pb-3">
+            {isActive && (
+                <div
+                    aria-hidden="true"
+                    className="absolute inset-x-0 top-0 h-1 rounded-t-xl bg-amber-500/85 dark:bg-amber-400/45"
+                />
+            )}
+            <div
+                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${colors.bar} ${
+                    isActive ? "opacity-30" : player.isOutOfRound ? "opacity-20" : "opacity-35"
+                }`}
+                aria-hidden="true"
+            />
+            <CardHeader className="pb-3 pl-6">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                         <GripVertical className="w-4 h-4 text-gray-400 dark:text-zinc-600 cursor-grab touch-none shrink-0" />
+                        <span
+                            className={`h-2 w-2 rounded-full ring-2 ring-white/80 ${colors.bar} ${
+                                isActive ? "opacity-75" : "opacity-45"
+                            }`}
+                            aria-hidden="true"
+                        />
                         {editingPlayer === player.id ? (
                             <Input
                                 value={editName}
@@ -313,10 +380,12 @@ export const PlayerCard = ({
                         ) : (
                             <div className="flex items-center gap-2 min-w-0">
                                 <CardTitle
-                                    className={`text-xl truncate ${
+                                    className={`text-xl font-semibold truncate ${
                                         isActive
                                             ? "text-amber-800 dark:text-amber-100/90"
-                                            : "text-gray-700 dark:text-zinc-300"
+                                            : player.isOutOfRound
+                                              ? "text-slate-500 dark:text-zinc-500"
+                                              : "text-slate-700 dark:text-zinc-300"
                                     }`}
                                 >
                                     {player.name}
@@ -337,7 +406,7 @@ export const PlayerCard = ({
                     </div>
                     <div className="flex items-center gap-2 flex-wrap justify-end">
                         {player.isOutOfRound && (
-                            <Badge className="bg-gray-500 text-white text-xs dark:bg-zinc-700 dark:text-zinc-300">
+                            <Badge className="bg-slate-200 text-slate-600 text-xs dark:bg-zinc-700/70 dark:text-zinc-300">
                                 Done
                             </Badge>
                         )}
@@ -347,15 +416,29 @@ export const PlayerCard = ({
                             </Badge>
                         )}
                         {isActive && isOvertime && (
-                            <Badge className="bg-red-500 text-white text-xs animate-pulse dark:bg-rose-600/25 dark:text-rose-200/90 dark:font-normal">
+                            <Badge className="bg-red-500 text-white text-xs dark:bg-rose-600/25 dark:text-rose-200/90 dark:font-normal">
                                 <AlertTriangle className="w-3 h-3 mr-1" />
                                 Overtime
                             </Badge>
                         )}
                         {isActive && !player.isOutOfRound && (
-                            <Badge className="bg-amber-500 text-white text-xs dark:bg-amber-500/20 dark:text-amber-100/90 dark:font-normal">
-                                <Play className="w-3 h-3 mr-1" />
-                                Active
+                            <Badge
+                                className={
+                                    isRunning
+                                        ? "bg-amber-500 text-white text-xs dark:bg-amber-500/20 dark:text-amber-100/90 dark:font-normal"
+                                        : "bg-slate-700 text-white text-xs dark:bg-white/12 dark:text-zinc-200 dark:font-normal"
+                                }
+                            >
+                                {isRunning ? (
+                                    <Play className="w-3 h-3 mr-1" />
+                                ) : (
+                                    <Pause className="w-3 h-3 mr-1" />
+                                )}
+                                {isRunning
+                                    ? "Active"
+                                    : autoResumeSeconds
+                                      ? `Resume in ${autoResumeSeconds}s`
+                                      : "Paused"}
                             </Badge>
                         )}
                         {canReopenTurn && (
@@ -367,32 +450,17 @@ export const PlayerCard = ({
                                     onReopenTurn?.(player.id)
                                 }}
                                 className="h-8 px-2 text-xs border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 touch-manipulation shrink-0 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100"
-                                title="Reopen this player's Reveal turn for correction without adding +1:00"
+                                title="Reopen this player's Reveal turn without adding a bonus"
                             >
                                 <RotateCcw className="mr-1 h-3.5 w-3.5" />
                                 Reopen Reveal
-                            </Button>
-                        )}
-                        {canManualSwitch && (
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    onManualSwitch?.(player.id)
-                                }}
-                                className="h-8 px-2 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 touch-manipulation shrink-0 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
-                                title="Manual switch without +1:00"
-                            >
-                                <MousePointerClick className="mr-1 h-3.5 w-3.5" />
-                                Switch
                             </Button>
                         )}
                     </div>
                 </div>
             </CardHeader>
 
-            <CardContent>
+            <CardContent className="pl-6">
                 <div className="space-y-4">
                     {showColorSelectors && (
                         <div className="flex items-center gap-2">
@@ -432,11 +500,7 @@ export const PlayerCard = ({
 
                     <div className="text-center">
                         <div
-                            className={`text-3xl md:text-4xl font-mono font-bold tabular-nums transition-all duration-300 ${
-                                showTurnBonusPulse
-                                    ? "scale-[1.02] drop-shadow-[0_0_14px_rgba(34,197,94,0.45)]"
-                                    : ""
-                            } ${
+                            className={`text-3xl md:text-4xl font-mono font-bold tabular-nums transition-colors duration-200 ${
                                 displayTimeRemaining < 60
                                     ? "text-red-600 dark:text-rose-400/65"
                                     : displayTimeRemaining < 180
@@ -447,7 +511,7 @@ export const PlayerCard = ({
                             {formatTime(displayTimeRemaining)}
                         </div>
                         <p className="text-sm text-gray-600 dark:text-zinc-500 mt-1">
-                            Time Remaining
+                            remaining
                         </p>
 
                         {showAdjustButtons && (
@@ -549,153 +613,115 @@ export const PlayerCard = ({
 
                                 <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
 
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={!onToggleSwordmaster}
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onToggleSwordmaster?.(player.id)
-                                    }}
-                                    className={`h-8 px-2 text-xs touch-manipulation ${
-                                        player.hasSwordmaster
-                                            ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100"
-                                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
-                                    }`}
-                                    title={
-                                        player.hasSwordmaster
-                                            ? "Remove Swordmaster turn"
-                                            : "Add Swordmaster turn"
-                                    }
-                                >
-                                    <Swords className="mr-1 h-3.5 w-3.5" />
-                                    Swordmaster
-                                </Button>
-
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={!onAddTurn}
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onAddTurn?.(player.id)
-                                    }}
-                                    className="h-8 px-2 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 touch-manipulation dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
-                                    title="Add one extra timed Agent turn this round"
-                                >
-                                    <span className="text-xs font-medium leading-none">+ Turn</span>
-                                </Button>
-
-                                {showRemoveTurn && (
+                                <div className="flex flex-wrap items-center gap-1.5">
                                     <Button
                                         type="button"
                                         size="sm"
                                         variant="outline"
-                                        disabled={!onRemoveTurn}
+                                        disabled={!onAddTurn}
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            onRemoveTurn?.(player.id)
+                                            onAddTurn?.(player.id)
                                         }}
-                                        className="h-8 px-2 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 touch-manipulation dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
-                                        title="Remove one manually added extra turn"
+                                        className="h-8 px-2.5 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 touch-manipulation dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
+                                        title="Add one extra timed Agent turn this round"
                                     >
-                                        <span className="text-xs font-medium leading-none">− Turn</span>
+                                        <span className="text-xs font-medium leading-none">+ Turn</span>
                                     </Button>
-                                )}
+
+                                    {showRemoveTurn && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={!onRemoveTurn}
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onRemoveTurn?.(player.id)
+                                            }}
+                                            className="h-8 px-2 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 touch-manipulation dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
+                                            title="Remove one manually added extra turn"
+                                        >
+                                            <span className="text-xs font-medium leading-none">− Turn</span>
+                                        </Button>
+                                    )}
+
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={!onToggleSwordmaster}
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onToggleSwordmaster?.(player.id)
+                                        }}
+                                        className={`h-8 px-2 text-xs touch-manipulation ${
+                                            player.hasSwordmaster
+                                                ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100"
+                                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
+                                        }`}
+                                        title={
+                                            player.hasSwordmaster
+                                                ? "Remove Swordmaster turn"
+                                                : "Add Swordmaster turn"
+                                        }
+                                    >
+                                        <Swords className="mr-1 h-3.5 w-3.5" />
+                                        Swordmaster
+                                    </Button>
+
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {isActive && gameStarted && !player.isOutOfRound && (
-                        <div className="space-y-2">
+                    {gameStarted && (
+                        <div
+                            className={`space-y-2 ${
+                                isActive
+                                    ? ""
+                                    : player.isOutOfRound
+                                      ? "opacity-55 transition-opacity group-hover:opacity-75"
+                                      : "opacity-75 transition-opacity group-hover:opacity-95"
+                            }`}
+                        >
                             <div className="flex justify-between text-xs text-gray-600 dark:text-zinc-500">
-                                <span>Turn Progress</span>
-                                <span>
-                                    {Math.min(60 - currentTurnTime, 60)}/60s
-                                </span>
+                                <span>Turn bonus</span>
+                                <span className="tabular-nums">{turnBonusLabel}</span>
                             </div>
-                            <div className="w-full bg-gray-200 dark:bg-zinc-800/80 rounded-full h-3">
+                            <div
+                                className="h-3 w-full rounded-full bg-gray-200 dark:bg-zinc-800/80"
+                                aria-label="Turn bonus remaining"
+                            >
                                 <div
-                                    className={`h-3 rounded-full transition-all duration-300 ${turnProgressColor} ${
-                                        isOvertime ? "animate-pulse" : ""
+                                    className={`h-3 rounded-full transition-colors duration-200 ${
+                                        isActive
+                                            ? turnProgressColor
+                                            : hasStartedSlot
+                                              ? "bg-slate-300 dark:bg-zinc-700"
+                                              : "bg-transparent"
                                     }`}
                                     style={{
                                         width: `${Math.max(0, turnProgressPercentage)}%`,
                                     }}
                                 />
                             </div>
-                        </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-4 text-center">
-                        <div
-                            className={`rounded-lg p-3 ${player.currentTurnEfficiency >= 0 ? colors.bg : "bg-red-50 dark:bg-rose-950/20"}`}
-                        >
-                            <div className="flex items-center justify-center gap-1 mb-1">
-                                <Clock
-                                    className={`w-4 h-4 ${
-                                        player.currentTurnEfficiency >= 0
-                                            ? colors.text
-                                            : "text-red-600 dark:text-rose-400/50"
-                                    }`}
-                                />
+                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                                <span>Turn efficiency</span>
                                 <span
-                                    className={`text-xs md:text-sm font-medium ${
-                                        player.currentTurnEfficiency >= 0
-                                            ? colors.text
-                                            : "text-red-700 dark:text-rose-300/55"
+                                    className={`rounded-md px-2 py-0.5 font-semibold tabular-nums ${
+                                        !hasStartedSlot
+                                            ? "bg-slate-100 text-slate-400 dark:bg-white/[0.04] dark:text-zinc-500"
+                                            : turnEfficiencyValue >= 0
+                                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300/80"
+                                              : "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300/80"
                                     }`}
                                 >
-                                    Turn Efficiency
+                                    {turnEfficiencyLabel}
                                 </span>
                             </div>
-                            <div
-                                className={`text-lg font-bold ${
-                                    player.currentTurnEfficiency >= 0
-                                        ? colors.text
-                                        : "text-red-800 dark:text-rose-200/60"
-                                }`}
-                            >
-                                {player.currentTurnEfficiency >= 0
-                                    ? "+ "
-                                    : "- "}
-                                {formatTime(
-                                    Math.abs(player.currentTurnEfficiency),
-                                )}
-                                {Math.abs(player.currentTurnEfficiency) >= 60
-                                    ? "m"
-                                    : "s"}
-                            </div>
                         </div>
-
-                        <div className={`rounded-lg p-3 ${colors.bg}`}>
-                            <div
-                                className={`text-xs md:text-sm font-medium ${colors.text} mb-1`}
-                            >
-                                Timed Turns
-                            </div>
-                            <div className={`text-lg font-bold ${colors.text}`}>
-                                {player.turnsCompleted}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="w-full bg-gray-200 dark:bg-zinc-800/80 rounded-full h-2">
-                        <div
-                            className={`h-2 rounded-full transition-all duration-300 ${
-                                player.timeRemaining < 60
-                                    ? "bg-red-500 dark:bg-rose-500/35"
-                                    : player.timeRemaining < 180
-                                      ? "bg-orange-500 dark:bg-amber-500/30"
-                                      : `${colors.bar} dark:opacity-70`
-                            }`}
-                            style={{
-                                width: `${Math.min(100, Math.max(0, (displayTimeRemaining / initialTime) * 100))}%`,
-                            }}
-                        />
-                    </div>
+                    )}
                 </div>
             </CardContent>
         </Card>

@@ -15,8 +15,8 @@ export interface Player {
     agentTurnsTaken: number // completed Agent turns this round
     extraTurnsThisRound: number // manual extra Agent turns this round
     hasSwordmaster: boolean // adds one Agent turn
-    turnStartBank: number // bank before current turn bonus
-    turnBonusAppliedThisTurn: number // automatic turn bonus in seconds
+    turnStartBank: number // game-time balance underneath the current turn bonus
+    turnBonusAppliedThisTurn: number // remaining bonus seconds for the selected/started slot
 }
 
 export interface GameState {

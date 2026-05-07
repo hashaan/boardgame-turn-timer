@@ -191,4 +191,4 @@ for (const testCase of cases) {
 }
 
 rmSync(buildDir, { recursive: true, force: true })
-console.log(`✓ ${cases.length} Dune battle icon tests passed`)
+console.log(`✓ Dune battle icon checks passed (${cases.length}/${cases.length})`)

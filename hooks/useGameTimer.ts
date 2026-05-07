@@ -8,6 +8,7 @@ import { track } from "@vercel/analytics/react"
 
 const BASE_AGENT_TURNS = 2
 const TURN_TIME_BONUS = 60
+const TIMER_TICK_SETTLE_MS = 25
 const MAX_UNDO_SNAPSHOTS = 25
 
 const createInitialPlayer = (
@@ -37,7 +38,7 @@ const initialPlayers: Player[] = [
     createInitialPlayer(1, "Player 1", "blue", true),
     createInitialPlayer(2, "Player 2", "green"),
     createInitialPlayer(3, "Player 3", "purple"),
-    createInitialPlayer(4, "Player 4", "orange"),
+    createInitialPlayer(4, "Player 4", "rose"),
 ]
 
 type TimerSnapshot = {
@@ -54,6 +55,7 @@ type TimerSnapshot = {
     showColorSelectors: boolean
     lastOvertimeWarning: number
     currentPlayerIndex: number
+    turnPlayerId: number | null
     playerOrder: number[]
     currentOrderIndex: number
 }
@@ -92,7 +94,7 @@ const normalizePlayer = (player: Partial<Player>, index: number): Player => {
                 ? player.turnsCompleted
                 : 0,
         isActive: Boolean(player.isActive),
-        color: player.color ?? fallback.color,
+        color: player.color === "orange" ? "rose" : player.color ?? fallback.color,
         isRevealing: Boolean(player.isRevealing),
         isOutOfRound: Boolean(player.isOutOfRound),
         agentTurnsTaken: Math.max(0, Number(player.agentTurnsTaken ?? 0)),
@@ -109,18 +111,178 @@ const normalizePlayer = (player: Partial<Player>, index: number): Player => {
     }
 }
 
-const prepareActiveTurn = (player: Player): Player => {
+const getStartedTurnLevel = (player: Player): number => {
     const agentTurnLimit = getAgentTurnLimit(player)
+    const startedAgentTurns = Math.min(player.agentTurnsTaken, agentTurnLimit)
+    return startedAgentTurns + (player.isRevealing || player.isOutOfRound ? 1 : 0)
+}
+
+const getMaxTurnLevel = (player: Player): number => {
+    return getAgentTurnLimit(player) + 1
+}
+
+const getRoundOrderIndices = (
+    players: Player[],
+    playerOrder: number[],
+    currentOrderIndex: number,
+): number[] => {
+    const fallbackOrder = players.map((player) => player.id)
+    const orderIds = playerOrder.length > 0 ? playerOrder : fallbackOrder
+    const safeStart =
+        orderIds.length > 0
+            ? ((currentOrderIndex % orderIds.length) + orderIds.length) %
+              orderIds.length
+            : 0
+    const rotatedOrderIds = [
+        ...orderIds.slice(safeStart),
+        ...orderIds.slice(0, safeStart),
+    ]
+
+    const indices = rotatedOrderIds
+        .map((id) => players.findIndex((player) => player.id === id))
+        .filter((index) => index >= 0)
+
+    return indices.length > 0 ? indices : players.map((_, index) => index)
+}
+
+const getPreviousIndexInOrder = (
+    targetIndex: number,
+    orderIndices: number[],
+): number => {
+    if (orderIndices.length <= 1) return targetIndex
+    const targetOrderIndex = orderIndices.indexOf(targetIndex)
+    if (targetOrderIndex === -1) return targetIndex
+    return orderIndices[
+        (targetOrderIndex - 1 + orderIndices.length) % orderIndices.length
+    ]
+}
+
+const canStartNextSlot = (
+    players: Player[],
+    targetIndex: number,
+    orderIndices: number[],
+    direction: 1 | -1,
+): boolean => {
+    if (direction !== 1) return false
+
+    const targetPlayer = players[targetIndex]
+    if (!targetPlayer || targetPlayer.isOutOfRound) return false
+
+    const targetLevel = getStartedTurnLevel(targetPlayer)
+    const nextLevel = targetLevel + 1
+    if (nextLevel > getMaxTurnLevel(targetPlayer)) return false
+
+    const previousIndex = getPreviousIndexInOrder(targetIndex, orderIndices)
+    const previousPlayer = players[previousIndex]
+
+    if (!previousPlayer || previousIndex === targetIndex) return true
+
+    // Main invariant: a player can only catch up to the player before them
+    // in the round order. They cannot overtake that player. If the previous
+    // player has no slot at this level, it does not block later extra slots.
+    if (getMaxTurnLevel(previousPlayer) < nextLevel) return true
+    if (getStartedTurnLevel(previousPlayer) >= nextLevel) return true
+
+    // Round-starter exception: the first player in the current round order can
+    // begin the next lap once everyone has started the previous lap or has no
+    // slot at that level. This covers the first turn of a round and later laps.
+    const roundStarterIndex = orderIndices[0]
+    if (targetIndex !== roundStarterIndex) return false
+
+    return orderIndices.every((index) => {
+        const player = players[index]
+        if (!player) return true
+        const requiredPriorLevel = Math.min(nextLevel - 1, getMaxTurnLevel(player))
+        return getStartedTurnLevel(player) >= requiredPriorLevel
+    })
+}
+
+const startNextSlotWithoutActivating = (player: Player): Player => {
+    const agentTurnLimit = getAgentTurnLimit(player)
+    const agentTurnsTaken = Math.min(player.agentTurnsTaken, agentTurnLimit)
+
+    let nextPlayer = player
+
+    if (agentTurnsTaken < agentTurnLimit) {
+        nextPlayer = {
+            ...player,
+            agentTurnsTaken: agentTurnsTaken + 1,
+            isRevealing: false,
+            isOutOfRound: false,
+        }
+    } else if (!player.isRevealing && !player.isOutOfRound) {
+        nextPlayer = {
+            ...player,
+            agentTurnsTaken: agentTurnLimit,
+            isRevealing: true,
+            isOutOfRound: false,
+        }
+    }
+
+    const nextStartedLevel = getStartedTurnLevel(nextPlayer)
+
     const turnStartBank = Math.max(0, Math.floor(player.timeRemaining))
+
+    return {
+        ...nextPlayer,
+        timeRemaining: turnStartBank + TURN_TIME_BONUS,
+        turnsCompleted: Math.max(player.turnsCompleted, nextStartedLevel),
+        turnStartBank,
+        turnBonusAppliedThisTurn: TURN_TIME_BONUS,
+        currentTurnEfficiency: TURN_TIME_BONUS,
+    }
+}
+
+const hasAnyOpenTurnSlot = (players: Player[]): boolean =>
+    players.some((player) => getStartedTurnLevel(player) < getMaxTurnLevel(player))
+
+const prepareActiveTurn = (
+    player: Player,
+    options: { applyTurnCredit?: boolean } = {},
+): Player => {
+    const applyTurnCredit = options.applyTurnCredit ?? true
+    const agentTurnLimit = getAgentTurnLimit(player)
+    const existingTurnBonus = Math.max(
+        0,
+        Number(player.turnBonusAppliedThisTurn ?? 0),
+    )
+    const turnBonus = applyTurnCredit ? TURN_TIME_BONUS : existingTurnBonus
+    const turnStartBank = applyTurnCredit
+        ? Math.max(0, Math.floor(player.timeRemaining))
+        : Math.max(0, Math.floor(player.timeRemaining) - turnBonus)
+
+    let agentTurnsTaken = Math.min(player.agentTurnsTaken, agentTurnLimit)
+    let isRevealing = player.isRevealing
+    let isOutOfRound = player.isOutOfRound
+
+    if (applyTurnCredit && !isOutOfRound) {
+        if (agentTurnsTaken < agentTurnLimit) {
+            agentTurnsTaken += 1
+            isRevealing = false
+        } else if (!isRevealing) {
+            isRevealing = true
+        }
+    }
+
+    const nextStartedLevel = getStartedTurnLevel({
+        ...player,
+        isRevealing,
+        isOutOfRound,
+        agentTurnsTaken,
+    } as Player)
     return {
         ...player,
         isActive: true,
-        isRevealing:
-            player.isRevealing || player.agentTurnsTaken >= agentTurnLimit,
-        currentTurnEfficiency: 0,
+        isOutOfRound,
+        isRevealing,
+        agentTurnsTaken,
+        currentTurnEfficiency: turnBonus,
+        turnsCompleted: applyTurnCredit
+            ? Math.max(player.turnsCompleted, nextStartedLevel)
+            : player.turnsCompleted,
         turnStartBank,
-        turnBonusAppliedThisTurn: TURN_TIME_BONUS,
-        timeRemaining: turnStartBank + TURN_TIME_BONUS,
+        turnBonusAppliedThisTurn: turnBonus,
+        timeRemaining: turnStartBank + turnBonus,
     }
 }
 
@@ -130,9 +292,28 @@ const getLiveTurnTimeRemaining = (
 ): number => {
     const startBank = Math.max(0, Number(player.turnStartBank ?? 0))
     const turnBonus = Math.max(0, Number(player.turnBonusAppliedThisTurn ?? 0))
-    const baseline = startBank > 0 ? startBank : Math.max(0, Number(player.timeRemaining ?? 0))
 
-    return Math.max(0, baseline + turnBonus - elapsedSeconds)
+    return Math.max(0, startBank + turnBonus - elapsedSeconds)
+}
+
+const freezeActiveTurn = (
+    player: Player,
+    elapsedSeconds: number,
+): Player => {
+    const currentBonus = Math.max(
+        0,
+        Number(player.turnBonusAppliedThisTurn ?? 0),
+    )
+    const bonusRemaining = Math.max(0, currentBonus - elapsedSeconds)
+    const timeRemaining = getLiveTurnTimeRemaining(player, elapsedSeconds)
+
+    return {
+        ...player,
+        timeRemaining,
+        turnBonusAppliedThisTurn: bonusRemaining,
+        turnStartBank: Math.max(0, timeRemaining - bonusRemaining),
+        currentTurnEfficiency: bonusRemaining,
+    }
 }
 
 export const useGameTimer = () => {
@@ -159,6 +340,7 @@ export const useGameTimer = () => {
     const [draggedPlayer, setDraggedPlayer] = useState<number | null>(null)
     const [lastOvertimeWarning, setLastOvertimeWarning] = useState<number>(0)
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState<number>(0)
+    const [turnPlayerId, setTurnPlayerId] = useState<number | null>(null)
     const [isTransitioning, setIsTransitioning] = useState<boolean>(false)
     const [slideDirection, setSlideDirection] = useState<
         "left" | "right" | null
@@ -167,20 +349,124 @@ export const useGameTimer = () => {
     const [nextPlayerId, setNextPlayerId] = useState<number | null>(null)
     const [playerOrder, setPlayerOrder] = useState<number[]>([])
     const [currentOrderIndex, setCurrentOrderIndex] = useState<number>(0)
+    const [timerTick, setTimerTick] = useState(0)
     const [undoStack, setUndoStack] = useState<TimerSnapshot[]>([])
     const intervalRef = useRef<NodeJS.Timeout | null>(null)
     const manualNavigationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const lastOvertimeWarningRef = useRef(0)
+    const navigationActionRef = useRef(false)
+    const autoResumeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const autoResumeIntervalRef = useRef<NodeJS.Timeout | null>(null)
+    const activePlayerIdRef = useRef<number | null>(null)
+    const isRunningRef = useRef(false)
+    const gameStartedRef = useRef(false)
+    const roundPhaseRef = useRef<TimerPhase>("player-turns")
+    const [autoResumeSeconds, setAutoResumeSeconds] = useState<number | null>(null)
 
     const sounds = useSoundEffects(soundEnabled)
+    const soundsRef = useRef(sounds)
+
+    const releaseManualNavigation = () => {
+        if (manualNavigationTimeoutRef.current) {
+            clearTimeout(manualNavigationTimeoutRef.current)
+            manualNavigationTimeoutRef.current = null
+        }
+        setManualNavigation(false)
+    }
+
+    const beginNavigationAction = () => {
+        if (navigationActionRef.current) return false
+        navigationActionRef.current = true
+        setTimeout(() => {
+            navigationActionRef.current = false
+        }, 160)
+        return true
+    }
+
+    useEffect(() => {
+        soundsRef.current = sounds
+    }, [sounds])
 
     const activePlayer = players.find((p) => p.isActive)
     const activePlayerIndex = players.findIndex((p) => p.isActive)
+    const resolvedTurnPlayerId =
+        turnPlayerId ?? activePlayer?.id ?? players[currentPlayerIndex]?.id ?? null
+    const turnPlayer =
+        players.find((player) => player.id === resolvedTurnPlayerId) ??
+        activePlayer
+    const turnPlayerIndex = players.findIndex(
+        (player) => player.id === turnPlayer?.id,
+    )
+    const isCorrectionMode = false
+
+    useEffect(() => {
+        activePlayerIdRef.current = activePlayer?.id ?? null
+        isRunningRef.current = isRunning
+        gameStartedRef.current = gameStarted
+        roundPhaseRef.current = roundPhase
+    }, [activePlayer?.id, isRunning, gameStarted, roundPhase])
+
+    useEffect(() => {
+        lastOvertimeWarningRef.current = lastOvertimeWarning
+    }, [lastOvertimeWarning])
 
     const [syncSignal, setSyncSignal] = useState(0)
     const triggerSync = () => {
         queueMicrotask(() => {
             setSyncSignal((v) => v + 1)
         })
+    }
+
+    const clearAutoResume = () => {
+        if (autoResumeTimeoutRef.current) {
+            clearTimeout(autoResumeTimeoutRef.current)
+            autoResumeTimeoutRef.current = null
+        }
+        if (autoResumeIntervalRef.current) {
+            clearInterval(autoResumeIntervalRef.current)
+            autoResumeIntervalRef.current = null
+        }
+        setAutoResumeSeconds(null)
+    }
+
+    const scheduleAutoResume = (playerId: number, seconds = 3) => {
+        clearAutoResume()
+        setAutoResumeSeconds(seconds)
+
+        let remaining = seconds
+        autoResumeIntervalRef.current = setInterval(() => {
+            remaining -= 1
+            setAutoResumeSeconds(remaining > 0 ? remaining : null)
+        }, 1000)
+
+        autoResumeTimeoutRef.current = setTimeout(() => {
+            if (
+                activePlayerIdRef.current !== playerId ||
+                isRunningRef.current ||
+                !gameStartedRef.current ||
+                roundPhaseRef.current !== "player-turns"
+            ) {
+                clearAutoResume()
+                return
+            }
+
+            clearAutoResume()
+            releaseManualNavigation()
+            setPausedElapsedTime(0)
+            setTurnStartTime(Date.now())
+            setIsRunning(true)
+            triggerSync()
+        }, seconds * 1000)
+    }
+
+    const hasStartedTimingSlot = (player: Player | undefined): boolean => {
+        if (!player) return false
+        return (
+            getStartedTurnLevel(player) > 0 ||
+            Math.max(0, Number(player.turnBonusAppliedThisTurn ?? 0)) > 0 ||
+            player.isRevealing ||
+            player.isOutOfRound
+        )
     }
 
     const captureSnapshot = (): TimerSnapshot => ({
@@ -197,6 +483,7 @@ export const useGameTimer = () => {
         showColorSelectors,
         lastOvertimeWarning,
         currentPlayerIndex,
+        turnPlayerId: resolvedTurnPlayerId,
         playerOrder,
         currentOrderIndex,
     })
@@ -209,6 +496,7 @@ export const useGameTimer = () => {
     }
 
     const applySnapshot = (snapshot: TimerSnapshot) => {
+        clearAutoResume()
         setPlayers(snapshot.players)
         setIsRunning(snapshot.isRunning)
         setTurnStartTime(snapshot.turnStartTime)
@@ -222,11 +510,12 @@ export const useGameTimer = () => {
         setShowColorSelectors(snapshot.showColorSelectors)
         setLastOvertimeWarning(snapshot.lastOvertimeWarning)
         setCurrentPlayerIndex(snapshot.currentPlayerIndex)
+        setTurnPlayerId(snapshot.turnPlayerId ?? null)
         setPlayerOrder(snapshot.playerOrder)
         setCurrentOrderIndex(snapshot.currentOrderIndex)
         setIsTransitioning(false)
         setSlideDirection(null)
-        setManualNavigation(false)
+        releaseManualNavigation()
         triggerSync()
     }
 
@@ -264,6 +553,8 @@ export const useGameTimer = () => {
         if (storedRunning) setIsRunning(JSON.parse(storedRunning))
         const storedStarted = get("dune-timer-started")
         if (storedStarted) setGameStarted(JSON.parse(storedStarted))
+        const storedTurnPlayerId = get("dune-timer-turn-player-id")
+        if (storedTurnPlayerId) setTurnPlayerId(JSON.parse(storedTurnPlayerId))
         const storedGameStart = get("dune-timer-game-start")
         if (storedGameStart) setGameStartTime(JSON.parse(storedGameStart))
         const storedRound = get("dune-timer-round")
@@ -297,6 +588,17 @@ export const useGameTimer = () => {
         if (!hydrated) return
         localStorage.setItem("dune-timer-started", JSON.stringify(gameStarted))
     }, [gameStarted, hydrated])
+    useEffect(() => {
+        if (!hydrated) return
+        if (turnPlayerId === null) {
+            localStorage.removeItem("dune-timer-turn-player-id")
+            return
+        }
+        localStorage.setItem(
+            "dune-timer-turn-player-id",
+            JSON.stringify(turnPlayerId),
+        )
+    }, [turnPlayerId, hydrated])
     useEffect(() => {
         if (!hydrated) return
         if (gameStartTime)
@@ -367,58 +669,89 @@ export const useGameTimer = () => {
     ])
 
     useEffect(() => {
-        if (isRunning && activePlayer && turnStartTime) {
-            intervalRef.current = setInterval(() => {
-                setPlayers((prev) =>
-                    prev.map((player) => {
-                        if (player.isActive) {
-                            const currentTurnTime =
-                                Math.floor(
-                                    (Date.now() - turnStartTime) / 1000,
-                                ) + pausedElapsedTime
-                            const currentEfficiency =
-                                TURN_TIME_BONUS - currentTurnTime
-
-                            if (
-                                currentTurnTime > TURN_TIME_BONUS &&
-                                Math.floor(currentTurnTime / 30) >
-                                    lastOvertimeWarning
-                            ) {
-                                sounds.playOvertime()
-                                setLastOvertimeWarning(
-                                    Math.floor(currentTurnTime / 30),
-                                )
-                            }
-
-                            return {
-                                ...player,
-                                timeRemaining: getLiveTurnTimeRemaining(
-                                    player,
-                                    currentTurnTime,
-                                ),
-                                currentTurnEfficiency: currentEfficiency,
-                            }
-                        }
-                        return player
-                    }),
-                )
-            }, 1000)
-        } else if (intervalRef.current) {
-            clearInterval(intervalRef.current)
+        if (intervalRef.current) {
+            clearTimeout(intervalRef.current)
+            intervalRef.current = null
         }
+
+        if (!isRunning || !activePlayer || !turnStartTime) return
+
+        const updateActiveTurnDisplay = () => {
+            const now = Date.now()
+                setTimerTick(now)
+            const currentTurnTime =
+                Math.floor((now - turnStartTime) / 1000) +
+                pausedElapsedTime
+            const currentTurnBonus = Math.max(
+                0,
+                Number(activePlayer.turnBonusAppliedThisTurn ?? 0),
+            )
+            const currentEfficiency = currentTurnBonus - currentTurnTime
+
+            if (
+                currentTurnTime > currentTurnBonus &&
+                Math.floor((currentTurnTime - currentTurnBonus) / 30) >
+                    lastOvertimeWarningRef.current
+            ) {
+                const warningBucket = Math.floor(
+                    (currentTurnTime - currentTurnBonus) / 30,
+                )
+                lastOvertimeWarningRef.current = warningBucket
+                soundsRef.current.playOvertime()
+                setLastOvertimeWarning(warningBucket)
+            }
+
+            setPlayers((prev) => {
+                let changed = false
+                const nextPlayers = prev.map((player) => {
+                    if (!player.isActive) return player
+
+                    const timeRemaining = getLiveTurnTimeRemaining(
+                        player,
+                        currentTurnTime,
+                    )
+
+                    if (
+                        player.timeRemaining === timeRemaining &&
+                        player.currentTurnEfficiency === currentEfficiency
+                    ) {
+                        return player
+                    }
+
+                    changed = true
+                    return {
+                        ...player,
+                        timeRemaining,
+                        currentTurnEfficiency: currentEfficiency,
+                    }
+                })
+
+                return changed ? nextPlayers : prev
+            })
+        }
+
+        const scheduleNextTick = () => {
+            updateActiveTurnDisplay()
+
+            const elapsedMs = Math.max(0, Date.now() - turnStartTime)
+            const msUntilNextSecond = 1000 - (elapsedMs % 1000)
+            const delay = Math.max(50, msUntilNextSecond + TIMER_TICK_SETTLE_MS)
+            intervalRef.current = setTimeout(scheduleNextTick, delay)
+        }
+
+        scheduleNextTick()
 
         return () => {
             if (intervalRef.current) {
-                clearInterval(intervalRef.current)
+                clearTimeout(intervalRef.current)
+                intervalRef.current = null
             }
         }
     }, [
         isRunning,
-        activePlayer,
+        activePlayer?.id,
         turnStartTime,
         pausedElapsedTime,
-        sounds,
-        lastOvertimeWarning,
     ])
 
     useEffect(() => {
@@ -435,7 +768,7 @@ export const useGameTimer = () => {
     }, [gameStarted, turnStartTime, pausedElapsedTime])
 
     useEffect(() => {
-        if (roundPhase === "round-wrap-up") return
+        if (roundPhase === "round-wrap-up" || !isRunning) return
         if (gameStarted && !turnStartTime && typeof window !== "undefined") {
             const savedTurnStart = localStorage.getItem("dune-timer-turn-start")
             const savedPausedElapsed = localStorage.getItem(
@@ -446,9 +779,10 @@ export const useGameTimer = () => {
             if (savedPausedElapsed)
                 setPausedElapsedTime(Number.parseInt(savedPausedElapsed))
         }
-    }, [gameStarted, turnStartTime, roundPhase])
+    }, [gameStarted, isRunning, turnStartTime, roundPhase])
 
     const getCurrentTurnTime = (): number => {
+        void timerTick
         if (!turnStartTime) return 0
         if (!isRunning) return pausedElapsedTime
         return (
@@ -461,6 +795,7 @@ export const useGameTimer = () => {
     }
 
     const enterRoundWrapUp = () => {
+        clearAutoResume()
         setRoundPhase("round-wrap-up")
         setTurnStartTime(null)
         setPausedElapsedTime(0)
@@ -476,87 +811,133 @@ export const useGameTimer = () => {
         }
     }
 
-    const completeActiveTurn = (direction: 1 | -1 = 1) => {
+    const completeActiveTurn = (
+        direction: 1 | -1 = 1,
+        options: { autoStartDueSlot?: boolean; autoResumeReview?: boolean } = {},
+    ) => {
+        if (!beginNavigationAction()) return
+        clearAutoResume()
+
+        const autoStartDueSlot = options.autoStartDueSlot ?? true
+        const autoResumeReview = options.autoResumeReview ?? true
         const currentTime = Date.now()
-        const turnDuration = turnStartTime
+        const shouldSettleRunning = isRunning && turnStartTime !== null
+        const turnDuration = shouldSettleRunning
             ? Math.floor((currentTime - turnStartTime) / 1000) +
               pausedElapsedTime
             : 0
-        const turnEfficiency = TURN_TIME_BONUS - turnDuration
         const activeIndex = players.findIndex((p) => p.isActive)
+        const startIndex = activeIndex !== -1 ? activeIndex : currentPlayerIndex
+        const includeOutOfRound = direction === -1 || !hasAnyOpenTurnSlot(players)
 
-        if (activeIndex === -1) return
+        if (players.length === 0) return
 
-        sounds.playTurnChange()
-        setLastOvertimeWarning(0)
-        track("turn_completed", {
-            duration_seconds: turnDuration,
-            is_overtime: turnDuration > TURN_TIME_BONUS,
-        })
+        if (activeIndex === -1 && direction === 1 && roundPhase === "round-wrap-up") {
+            endRound()
+            return
+        }
 
-        const updatedPlayers = players.map((player, index) => {
-            if (index !== activeIndex) return player
+        let updatedPlayers = players.map((player, index) => {
+            if (index !== activeIndex) return { ...player, isActive: false }
 
-            const wasReveal =
-                player.isRevealing ||
-                player.agentTurnsTaken >= getAgentTurnLimit(player)
+            const settledPlayer = shouldSettleRunning
+                ? freezeActiveTurn(player, turnDuration)
+                : player
 
             return {
-                ...player,
-                timeRemaining: getLiveTurnTimeRemaining(player, turnDuration),
+                ...settledPlayer,
                 isActive: false,
-                isRevealing: false,
-                isOutOfRound: wasReveal ? true : player.isOutOfRound,
-                agentTurnsTaken: wasReveal
-                    ? player.agentTurnsTaken
-                    : Math.min(
-                          getAgentTurnLimit(player),
-                          player.agentTurnsTaken + 1,
-                      ),
-                totalEfficiency: player.totalEfficiency + turnEfficiency,
-                turnsCompleted: player.turnsCompleted + 1,
+                // Moving forward out of Reveal marks that player done for the
+                // player-turn phase. Review navigation never un-fills a slot.
+                isRevealing:
+                    direction === 1 && player.isRevealing
+                        ? false
+                        : player.isRevealing,
+                isOutOfRound:
+                    direction === 1 && player.isRevealing
+                        ? true
+                        : player.isOutOfRound,
             }
         })
 
-        const availablePlayers = updatedPlayers.filter((p) => !p.isOutOfRound)
+        const nextIndex = getNextSelectableIndex(startIndex, direction, {
+            includeOutOfRound,
+        })
 
-        if (availablePlayers.length === 0) {
+        if (nextIndex === -1) {
             setPlayers(updatedPlayers)
+            setTurnPlayerId(null)
             enterRoundWrapUp()
+            releaseManualNavigation()
             triggerSync()
             return
         }
 
-        let nextIndex =
-            (activeIndex + direction + updatedPlayers.length) %
-            updatedPlayers.length
-
-        while (
-            updatedPlayers[nextIndex].isOutOfRound &&
-            nextIndex !== activeIndex
-        ) {
-            nextIndex =
-                (nextIndex + direction + updatedPlayers.length) %
-                updatedPlayers.length
-        }
-
-        const nextPlayers = updatedPlayers.map((player, index) =>
-            index === nextIndex ? prepareActiveTurn(player) : player,
+        const orderIndices = getRoundOrderIndices(
+            updatedPlayers,
+            playerOrder,
+            currentOrderIndex,
+        )
+        const shouldCreditTurn = canStartNextSlot(
+            updatedPlayers,
+            nextIndex,
+            orderIndices,
+            direction,
         )
 
+        const nextPlayers = updatedPlayers.map((player, index) =>
+            index === nextIndex
+                ? prepareActiveTurn(player, { applyTurnCredit: shouldCreditTurn })
+                : player,
+        )
+        const selectedPlayer = nextPlayers[nextIndex]
+        const shouldAutoStart = shouldCreditTurn && autoStartDueSlot
+
+        sounds.playTurnChange()
+        setLastOvertimeWarning(0)
+        track("turn_cursor_advanced", {
+            duration_seconds: turnDuration,
+            direction: direction === 1 ? "next" : "previous",
+            started_new_slot: shouldCreditTurn,
+            is_overtime: shouldSettleRunning && turnDuration > TURN_TIME_BONUS,
+        })
+
         setPlayers(nextPlayers)
+        setTurnPlayerId(selectedPlayer?.id ?? null)
+        setCurrentPlayerIndex(nextIndex)
+        setIsTransitioning(true)
+        setSlideDirection(direction === 1 ? "right" : "left")
+        setTimeout(() => {
+            setIsTransitioning(false)
+            setSlideDirection(null)
+        }, 500)
         setRoundPhase("player-turns")
-        setTurnStartTime(currentTime)
         setPausedElapsedTime(0)
-        setIsRunning(true)
+        releaseManualNavigation()
+
+        if (shouldAutoStart) {
+            setTurnStartTime(currentTime)
+            setIsRunning(true)
+        } else {
+            setTurnStartTime(null)
+            setIsRunning(false)
+            setManualNavigation(true)
+            if (autoResumeReview && selectedPlayer && hasStartedTimingSlot(selectedPlayer)) {
+                scheduleAutoResume(selectedPlayer.id)
+            }
+        }
+
         triggerSync()
     }
 
     const startPauseTimer = () => {
+        clearAutoResume()
+
         if (!gameStarted) {
             pushUndoSnapshot()
             setPlayerOrder(players.map((p) => p.id))
             setCurrentOrderIndex(0)
+            setTurnPlayerId(players.find((p) => p.isActive)?.id ?? players[0]?.id ?? null)
             setGameStarted(true)
             setRoundPhase("player-turns")
             setGameStartTime(Date.now())
@@ -592,14 +973,42 @@ export const useGameTimer = () => {
         } else if (roundPhase === "round-wrap-up") {
             return
         } else if (isRunning) {
-            if (turnStartTime) {
-                const currentElapsed =
-                    Math.floor((Date.now() - turnStartTime) / 1000) +
-                    pausedElapsedTime
-                setPausedElapsedTime(currentElapsed)
-            }
+            const currentElapsed = getCurrentTurnTime()
+            setPlayers((prev) =>
+                prev.map((player) =>
+                    player.isActive
+                        ? freezeActiveTurn(player, currentElapsed)
+                        : player,
+                ),
+            )
+            setTurnStartTime(null)
+            setPausedElapsedTime(0)
             setIsRunning(false)
+            if (typeof window !== "undefined") {
+                localStorage.removeItem("dune-timer-turn-start")
+                localStorage.removeItem("dune-timer-paused-elapsed")
+            }
         } else {
+            if (activePlayer?.isOutOfRound) {
+                setPlayers((prev) =>
+                    prev.map((player) => {
+                        if (!player.isActive) return player
+                        return {
+                            ...player,
+                            isOutOfRound: false,
+                            isRevealing: true,
+                            agentTurnsTaken: getAgentTurnLimit(player),
+                            currentTurnEfficiency: 0,
+                            turnStartBank: Math.max(
+                                0,
+                                Math.floor(player.timeRemaining),
+                            ),
+                            turnBonusAppliedThisTurn: 0,
+                        }
+                    }),
+                )
+            }
+            setPausedElapsedTime(0)
             setTurnStartTime(Date.now())
             setIsRunning(true)
         }
@@ -607,50 +1016,181 @@ export const useGameTimer = () => {
         triggerSync()
     }
 
-    const switchToPlayer = (playerId: number) => {
-        if (!gameStarted || roundPhase === "round-wrap-up") return
-        const target = players.find((p) => p.id === playerId)
-        if (!target || target.isOutOfRound || target.isActive) return
+    const getNextSelectableIndex = (
+        fromIndex: number,
+        direction: 1 | -1,
+        options: { includeOutOfRound?: boolean } = {},
+    ): number => {
+        if (players.length === 0) return -1
 
-        pushUndoSnapshot()
+        const includeOutOfRound = Boolean(options.includeOutOfRound)
+        let nextIndex =
+            (fromIndex + direction + players.length) % players.length
+        let checked = 0
 
-        const elapsed = getCurrentTurnTime()
+        while (
+            checked < players.length &&
+            !includeOutOfRound &&
+            players[nextIndex]?.isOutOfRound
+        ) {
+            nextIndex =
+                (nextIndex + direction + players.length) % players.length
+            checked += 1
+        }
 
-        setPlayers((prev) =>
-            prev.map((player) => {
-                if (player.id === playerId) {
-                    return {
-                        ...player,
-                        isActive: true,
-                        isRevealing:
-                            player.isRevealing ||
-                            player.agentTurnsTaken >= getAgentTurnLimit(player),
-                        currentTurnEfficiency: 0,
-                        turnStartBank: player.timeRemaining,
-                        turnBonusAppliedThisTurn: 0,
-                    }
-                }
+        return checked >= players.length ? -1 : nextIndex
+    }
 
-                if (player.isActive) {
-                    return {
-                        ...player,
-                        isActive: false,
-                        timeRemaining: getLiveTurnTimeRemaining(player, elapsed),
-                    }
-                }
+    const selectPlayerIndex = (
+        targetIndex: number,
+        options: {
+            direction?: "left" | "right"
+            autoStart?: boolean
+            manual?: boolean
+            allowOutOfRound?: boolean
+        } = {},
+    ) => {
+        if (!gameStarted) return
+        if (!beginNavigationAction()) return
+        clearAutoResume()
 
-                return { ...player, isActive: false }
-            }),
+        const target = players[targetIndex]
+        if (!target || target.isActive) return
+        if (target.isOutOfRound && !options.allowOutOfRound) return
+
+        const direction = options.direction ?? "right"
+        const autoStart = Boolean(options.autoStart)
+        const manual = options.manual ?? true
+        const shouldSettleRunning = isRunning && turnStartTime !== null
+        const elapsed = shouldSettleRunning ? getCurrentTurnTime() : 0
+        const currentTime = Date.now()
+
+        const settledPlayers = players.map((player, index) => {
+            if (index === targetIndex) return player
+            if (!player.isActive) return { ...player, isActive: false }
+            return {
+                ...(shouldSettleRunning ? freezeActiveTurn(player, elapsed) : player),
+                isActive: false,
+            }
+        })
+
+        const orderIndices = getRoundOrderIndices(
+            settledPlayers,
+            playerOrder,
+            currentOrderIndex,
         )
-        setTurnStartTime(Date.now())
+        const shouldCreditTarget =
+            autoStart &&
+            !target.isOutOfRound &&
+            canStartNextSlot(settledPlayers, targetIndex, orderIndices, 1)
+
+        const nextPlayers = settledPlayers.map((player, index) => {
+            if (index !== targetIndex) return { ...player, isActive: false }
+
+            if (player.isOutOfRound && autoStart) {
+                return {
+                    ...player,
+                    isActive: true,
+                    isOutOfRound: false,
+                    isRevealing: true,
+                    agentTurnsTaken: getAgentTurnLimit(player),
+                    currentTurnEfficiency: 0,
+                    turnStartBank: Math.max(0, Math.floor(player.timeRemaining)),
+                    turnBonusAppliedThisTurn: 0,
+                }
+            }
+
+            return prepareActiveTurn(
+                { ...player, isActive: true },
+                { applyTurnCredit: shouldCreditTarget },
+            )
+        })
+
+        const selectedPlayer = nextPlayers[targetIndex]
+        const shouldRun =
+            autoStart &&
+            Boolean(
+                selectedPlayer &&
+                    (shouldCreditTarget || hasStartedTimingSlot(selectedPlayer)),
+            )
+
+        setPlayers(nextPlayers)
+        setCurrentPlayerIndex(targetIndex)
+        setTurnPlayerId(target.id)
+        setIsTransitioning(true)
+        setSlideDirection(direction)
+        setTimeout(() => {
+            setIsTransitioning(false)
+            setSlideDirection(null)
+        }, 500)
         setPausedElapsedTime(0)
         setLastOvertimeWarning(0)
+
+        if (shouldRun) {
+            releaseManualNavigation()
+            setRoundPhase("player-turns")
+            setTurnStartTime(currentTime)
+            setIsRunning(true)
+        } else {
+            if (manual) setManualNavigation(true)
+            setTurnStartTime(null)
+            setIsRunning(false)
+            if (roundPhase === "round-wrap-up") setRoundPhase("player-turns")
+        }
+
         triggerSync()
+    }
+
+    const moveTimerCursor = (
+        direction: 1 | -1,
+        options: { autoStart?: boolean; manual?: boolean } = {},
+    ) => {
+        const activeIndex = players.findIndex((player) => player.isActive)
+        const startIndex = activeIndex !== -1 ? activeIndex : currentPlayerIndex
+        const targetIndex = getNextSelectableIndex(startIndex, direction)
+
+        if (targetIndex === -1) {
+            enterRoundWrapUp()
+            triggerSync()
+            return
+        }
+
+        selectPlayerIndex(targetIndex, {
+            direction: direction === 1 ? "right" : "left",
+            autoStart: options.autoStart,
+            manual: options.manual,
+        })
+    }
+
+    const switchToPlayer = (playerId: number) => {
+        const targetIndex = players.findIndex((player) => player.id === playerId)
+        if (targetIndex === -1) return
+        if (!gameStarted) {
+            setCurrentPlayerIndex(targetIndex)
+            return
+        }
+        const target = players[targetIndex]
+        if (!target || target.isActive) return
+
+        pushUndoSnapshot()
+        selectPlayerIndex(targetIndex, {
+            autoStart: true,
+            manual: false,
+            allowOutOfRound: true,
+        })
+    }
+
+    const returnToTurnPlayer = () => {
+        // Legacy compatibility for older callers. The timer now uses cursor navigation:
+        // arrows/card clicks select a player, and Next Turn advances one slot forward.
+        if (!gameStarted || roundPhase === "round-wrap-up") return
+        nextTurn()
     }
 
     const reopenPlayerTurn = (playerId: number) => {
         if (!gameStarted || roundPhase !== "round-wrap-up") return
         const target = players.find((p) => p.id === playerId)
+        const reopenTargetIndex = players.findIndex((player) => player.id === playerId)
         if (!target || !target.isOutOfRound) return
 
         pushUndoSnapshot()
@@ -673,6 +1213,9 @@ export const useGameTimer = () => {
                 return { ...player, isActive: false }
             }),
         )
+        if (reopenTargetIndex !== -1) setCurrentPlayerIndex(reopenTargetIndex)
+        setTurnPlayerId(playerId)
+        releaseManualNavigation()
         setRoundPhase("player-turns")
         setTurnStartTime(null)
         setPausedElapsedTime(0)
@@ -690,7 +1233,8 @@ export const useGameTimer = () => {
         }
 
         const availablePlayers = players.filter((p) => !p.isOutOfRound)
-        if (availablePlayers.length === 0) {
+        const hasActiveCursor = players.some((p) => p.isActive)
+        if (availablePlayers.length === 0 && !hasActiveCursor) {
             pushUndoSnapshot()
             enterRoundWrapUp()
             triggerSync()
@@ -698,6 +1242,7 @@ export const useGameTimer = () => {
         }
 
         pushUndoSnapshot()
+
         completeActiveTurn(1)
     }
 
@@ -743,41 +1288,80 @@ export const useGameTimer = () => {
         triggerSync()
     }
 
+    const fillPlayerToStartedLevel = (
+        sourcePlayers: Player[],
+        playerId: number,
+        requestedLevel: number,
+    ): Player[] => {
+        let nextPlayers = sourcePlayers
+        let targetIndex = nextPlayers.findIndex((player) => player.id === playerId)
+        if (targetIndex === -1) return sourcePlayers
+
+        const orderIndices = getRoundOrderIndices(
+            nextPlayers,
+            playerOrder,
+            currentOrderIndex,
+        )
+
+        let guard = 0
+        while (
+            targetIndex !== -1 &&
+            guard < 12 &&
+            getStartedTurnLevel(nextPlayers[targetIndex]) < requestedLevel &&
+            canStartNextSlot(nextPlayers, targetIndex, orderIndices, 1)
+        ) {
+            nextPlayers = nextPlayers.map((player, index) =>
+                index === targetIndex
+                    ? startNextSlotWithoutActivating(player)
+                    : player,
+            )
+            targetIndex = nextPlayers.findIndex((player) => player.id === playerId)
+            guard += 1
+        }
+
+        return nextPlayers
+    }
+
     const setPlayerTurnStage = (playerId: number, stage: PlayerTurnStage) => {
         pushUndoSnapshot()
-        setPlayers((prev) =>
-            prev.map((player) => {
+        setPlayers((prev) => {
+            const targetPlayer = prev.find((player) => player.id === playerId)
+            if (!targetPlayer) return prev
+
+            const limit = getAgentTurnLimit(targetPlayer)
+            const requestedLevel =
+                stage === "done" || stage === "reveal"
+                    ? limit + 1
+                    : Math.min(limit, Math.max(1, stage))
+
+            const filledPlayers = fillPlayerToStartedLevel(
+                prev,
+                playerId,
+                requestedLevel,
+            )
+
+            return filledPlayers.map((player) => {
                 if (player.id !== playerId) return player
-                const limit = getAgentTurnLimit(player)
-                if (stage === "done") {
+
+                if (stage === "reveal" || stage === "done") {
+                    const revealHasStarted = getStartedTurnLevel(player) >= limit + 1
+                    if (!revealHasStarted) return player
+
                     return {
                         ...player,
                         isOutOfRound: true,
                         isRevealing: false,
-                        isActive: player.isActive ? false : player.isActive,
-                        agentTurnsTaken: limit,
+                        isActive: false,
                     }
                 }
-                if (stage === "reveal") {
-                    return {
-                        ...player,
-                        isOutOfRound: false,
-                        isRevealing: true,
-                        agentTurnsTaken: limit,
-                    }
-                }
-                const nextAgentTurnsTaken = Math.max(
-                    0,
-                    Math.min(limit - 1, stage - 1),
-                )
+
                 return {
                     ...player,
                     isOutOfRound: false,
                     isRevealing: false,
-                    agentTurnsTaken: nextAgentTurnsTaken,
                 }
-            }),
-        )
+            })
+        })
         triggerSync()
     }
 
@@ -854,7 +1438,35 @@ export const useGameTimer = () => {
         triggerSync()
     }
 
+    const skipToRoundWrapUp = () => {
+        if (!gameStarted || roundPhase === "round-wrap-up") return
+
+        pushUndoSnapshot()
+        const elapsed = getCurrentTurnTime()
+
+        setPlayers((prev) =>
+            prev.map((player) => {
+                const frozenPlayer = player.isActive
+                    ? freezeActiveTurn(player, elapsed)
+                    : player
+
+                return {
+                    ...frozenPlayer,
+                    isActive: false,
+                    isRevealing: false,
+                    isOutOfRound: true,
+                    agentTurnsTaken: getAgentTurnLimit(frozenPlayer),
+                    currentTurnEfficiency: 0,
+                }
+            }),
+        )
+        setTurnPlayerId(null)
+        enterRoundWrapUp()
+        triggerSync()
+    }
+
     const endRound = () => {
+        clearAutoResume()
         pushUndoSnapshot()
         sounds.playRoundEnd()
         track("round_completed", {
@@ -868,8 +1480,11 @@ export const useGameTimer = () => {
             order.length > 0 ? (currentOrderIndex + 1) % order.length : 0
         const roundStarterId = order[nextIndex] ?? players[0]?.id
 
+        const roundStarterIndex = players.findIndex((player) => player.id === roundStarterId)
         setCurrentOrderIndex(nextIndex)
         setPlayerOrder(order)
+        setTurnPlayerId(roundStarterId ?? null)
+        setCurrentPlayerIndex(roundStarterIndex === -1 ? 0 : roundStarterIndex)
         setRoundPhase("player-turns")
         setPlayers((prev) =>
             prev.map((player) => ({
@@ -897,11 +1512,12 @@ export const useGameTimer = () => {
         setPausedElapsedTime(0)
         setIsRunning(true)
         setLastOvertimeWarning(0)
-        setManualNavigation(false)
+        releaseManualNavigation()
         triggerSync()
     }
 
     const resetGame = () => {
+        clearAutoResume()
         pushUndoSnapshot()
         if (gameStarted && gameStartTime) {
             const gameDuration = (Date.now() - gameStartTime) / 1000
@@ -938,13 +1554,14 @@ export const useGameTimer = () => {
         setTurnStartTime(null)
         setPausedElapsedTime(0)
         setCurrentRound(1)
-        setShowSettings(true)
+        setShowSettings(false)
         setShowColorSelectors(true)
         setLastOvertimeWarning(0)
+        setTurnPlayerId(null)
         setCurrentPlayerIndex(0)
         setIsTransitioning(false)
         setSlideDirection(null)
-        setManualNavigation(false)
+        releaseManualNavigation()
         setNextPlayerId(null)
         setPlayerOrder([])
         setCurrentOrderIndex(0)
@@ -954,24 +1571,49 @@ export const useGameTimer = () => {
             localStorage.removeItem("dune-timer-paused-elapsed")
             localStorage.removeItem("dune-timer-game-start")
             localStorage.removeItem("dune-timer-round-phase")
+            localStorage.removeItem("dune-timer-turn-player-id")
         }
         triggerSync()
     }
 
     const adjustPlayerTime = (playerId: number, adjustment: number) => {
         pushUndoSnapshot()
+        const activeElapsed = getCurrentTurnTime()
+
         setPlayers((prev) =>
-            prev.map((player) =>
-                player.id === playerId
-                    ? {
-                          ...player,
-                          timeRemaining: Math.max(
-                              0,
-                              player.timeRemaining + adjustment,
-                          ),
-                      }
-                    : player,
-            ),
+            prev.map((player) => {
+                if (player.id !== playerId) return player
+
+                if (!player.isActive) {
+                    return {
+                        ...player,
+                        timeRemaining: Math.max(
+                            0,
+                            player.timeRemaining + adjustment,
+                        ),
+                    }
+                }
+
+                const currentRemaining = getLiveTurnTimeRemaining(
+                    player,
+                    activeElapsed,
+                )
+                const nextRemaining = Math.max(0, currentRemaining + adjustment)
+                const nextTurnTotal = nextRemaining + activeElapsed
+                const currentBonus = Math.max(
+                    0,
+                    Number(player.turnBonusAppliedThisTurn ?? 0),
+                )
+                const nextBonus = Math.min(currentBonus, nextTurnTotal)
+                const nextTurnStartBank = Math.max(0, nextTurnTotal - nextBonus)
+
+                return {
+                    ...player,
+                    timeRemaining: nextRemaining,
+                    turnStartBank: nextTurnStartBank,
+                    turnBonusAppliedThisTurn: nextBonus,
+                }
+            }),
         )
         triggerSync()
     }
@@ -1023,49 +1665,51 @@ export const useGameTimer = () => {
     }
 
     const nextPlayerCard = (direction: "left" | "right" = "right") => {
-        setManualNavigation(true)
-        if (manualNavigationTimeoutRef.current)
-            clearTimeout(manualNavigationTimeoutRef.current)
-        track("mobile_navigation", {
+        track("timer_cursor_navigation", {
             direction,
             context: gameStarted && !isRunning ? "paused" : "active",
         })
-        setIsTransitioning(true)
-        setSlideDirection(direction)
-        setCurrentPlayerIndex((prev) =>
-            prev === players.length - 1 ? 0 : prev + 1,
-        )
-        setTimeout(() => {
-            setIsTransitioning(false)
-            setSlideDirection(null)
-        }, 500)
-        manualNavigationTimeoutRef.current = setTimeout(
-            () => setManualNavigation(false),
-            2000,
-        )
+
+        if (!gameStarted) {
+            setManualNavigation(true)
+            setIsTransitioning(true)
+            setSlideDirection(direction)
+            setCurrentPlayerIndex((prev) =>
+                prev === players.length - 1 ? 0 : prev + 1,
+            )
+            setTimeout(() => {
+                setIsTransitioning(false)
+                setSlideDirection(null)
+            }, 500)
+            return
+        }
+
+        pushUndoSnapshot()
+        completeActiveTurn(1, { autoStartDueSlot: true, autoResumeReview: true })
     }
 
     const previousPlayerCard = (direction: "left" | "right" = "left") => {
-        setManualNavigation(true)
-        if (manualNavigationTimeoutRef.current)
-            clearTimeout(manualNavigationTimeoutRef.current)
-        track("mobile_navigation", {
+        track("timer_cursor_navigation", {
             direction,
             context: gameStarted && !isRunning ? "paused" : "active",
         })
-        setIsTransitioning(true)
-        setSlideDirection(direction)
-        setCurrentPlayerIndex((prev) =>
-            prev === 0 ? players.length - 1 : prev - 1,
-        )
-        setTimeout(() => {
-            setIsTransitioning(false)
-            setSlideDirection(null)
-        }, 500)
-        manualNavigationTimeoutRef.current = setTimeout(
-            () => setManualNavigation(false),
-            2000,
-        )
+
+        if (!gameStarted) {
+            setManualNavigation(true)
+            setIsTransitioning(true)
+            setSlideDirection(direction)
+            setCurrentPlayerIndex((prev) =>
+                prev === 0 ? players.length - 1 : prev - 1,
+            )
+            setTimeout(() => {
+                setIsTransitioning(false)
+                setSlideDirection(null)
+            }, 500)
+            return
+        }
+
+        pushUndoSnapshot()
+        completeActiveTurn(-1, { autoStartDueSlot: false, autoResumeReview: true })
     }
 
     const setInitialTimeWithAnalytics = (time: number) => {
@@ -1096,6 +1740,10 @@ export const useGameTimer = () => {
         return () => {
             if (manualNavigationTimeoutRef.current)
                 clearTimeout(manualNavigationTimeoutRef.current)
+            if (autoResumeTimeoutRef.current)
+                clearTimeout(autoResumeTimeoutRef.current)
+            if (autoResumeIntervalRef.current)
+                clearInterval(autoResumeIntervalRef.current)
         }
     }, [])
 
@@ -1117,16 +1765,21 @@ export const useGameTimer = () => {
         draggedPlayer,
         activePlayer,
         activePlayerIndex,
+        turnPlayer,
+        turnPlayerIndex,
+        isCorrectionMode,
         currentPlayerIndex,
         isTransitioning,
         slideDirection,
         nextPlayerId,
+        autoResumeSeconds,
         canUndo: undoStack.length > 0,
         getCurrentTurnTime,
         getActivePlayersCount,
         getAgentTurnLimit,
         startPauseTimer,
         switchToPlayer,
+        returnToTurnPlayer,
         reopenPlayerTurn,
         nextTurn,
         previousTurn,
@@ -1137,6 +1790,7 @@ export const useGameTimer = () => {
         addPlayerTurn,
         removePlayerTurn,
         undoLastAction,
+        skipToRoundWrapUp,
         endRound,
         resetGame,
         adjustPlayerTime,

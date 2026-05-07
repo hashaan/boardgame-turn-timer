@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Trophy, Home, Moon, Sun } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { useState, useEffect, useRef } from "react"
+import { useState, useRef } from "react"
 import { Toaster, toast } from "sonner"
 import { useHostRoomSync } from "@/hooks/useHostRoomSync"
 
@@ -39,6 +39,7 @@ export default function DuneImperiumTimer() {
         editName,
         activePlayer,
         currentPlayerIndex,
+        autoResumeSeconds,
         canUndo,
         isTransitioning,
         slideDirection,
@@ -57,6 +58,7 @@ export default function DuneImperiumTimer() {
         addPlayerTurn,
         removePlayerTurn,
         undoLastAction,
+        skipToRoundWrapUp,
         endRound,
         resetGame,
         adjustPlayerTime,
@@ -115,21 +117,18 @@ export default function DuneImperiumTimer() {
         })
     }
 
-    // Add new state for next player index
-    const [nextPlayerIndex, setNextPlayerIndex] = useState(currentPlayerIndex)
-
-    // Update currentPlayerIndex after transition is complete
-    useEffect(() => {
-        if (!isTransitioning) {
-            setCurrentPlayerIndex(nextPlayerIndex)
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isTransitioning, nextPlayerIndex])
-
     useKeyboardShortcuts({
         onNextTurn: nextTurn,
         onToggleTimer: startPauseTimer,
-        onUndo: undoLastAction,
+        onUndo: () => {
+            if (showPlaythroughLog) {
+                setShowPlaythroughLog(false)
+                return
+            }
+            undoLastAction()
+        },
+        onNextPlayer: nextPlayerCard,
+        onPreviousPlayer: previousPlayerCard,
         gameStarted,
     })
 
@@ -153,58 +152,60 @@ export default function DuneImperiumTimer() {
 
     // Updated mobile navigation handlers to use nextPlayerIndex for transitions
     const handleMobileNext = () => {
-        const currentPlayer = players[currentPlayerIndex]
-        const isPaused = gameStarted && !isRunning
-
-        if (isPaused) {
-            // Directly set nextPlayerIndex for paused state
-            setNextPlayerIndex((currentPlayerIndex + 1) % players.length)
+        if (gameStarted) {
+            nextPlayerCard("right")
             return
         }
-
-        if (currentPlayer?.isActive && gameStarted && isRunning) {
-            // Set nextPlayerIndex before calling nextTurn
-            setNextPlayerIndex((currentPlayerIndex + 1) % players.length)
-            console.log("mobile next turn")
-            nextTurn()
-        }
+        setCurrentPlayerIndex((currentPlayerIndex + 1) % players.length)
     }
 
     const handleMobilePrevious = () => {
-        const currentPlayer = players[currentPlayerIndex]
-        const isPaused = gameStarted && !isRunning
-
-        if (isPaused) {
-            // Directly set nextPlayerIndex for paused state
-            setNextPlayerIndex(
-                (currentPlayerIndex - 1 + players.length) % players.length,
-            )
+        if (gameStarted) {
+            previousPlayerCard("left")
             return
         }
-
-        if (currentPlayer?.isActive && gameStarted && isRunning) {
-            undoLastAction()
-        }
+        setCurrentPlayerIndex(
+            (currentPlayerIndex - 1 + players.length) % players.length,
+        )
     }
 
     const focusPlayerCard = (playerId: number) => {
         const index = players.findIndex((player) => player.id === playerId)
         if (index === -1) return
-        setNextPlayerIndex(index)
+
+        if (gameStarted) {
+            switchToPlayer(playerId)
+            return
+        }
+
         setCurrentPlayerIndex(index)
     }
 
     const handleManualSwitch = (playerId: number) => {
         switchToPlayer(playerId)
-        toast.message("Manual switch — no +1:00 added", {
-            description: "Use Next Turn for normal turn advancement.",
+        toast.message("Player selected", {
+            description: "Timer moved to this player.",
         })
     }
 
 
+    const handleUndo = () => {
+        if (showPlaythroughLog) {
+            setShowPlaythroughLog(false)
+            toast.message("Returned to round cleanup")
+            return
+        }
+        undoLastAction()
+    }
+
+    const handleResetTimer = () => {
+        setShowPlaythroughLog(false)
+        resetGame()
+    }
+
     const handleFinishGameAndLog = () => {
         setShowPlaythroughLog(true)
-        toast.success("Game finished — log the playthrough when ready.")
+        toast.success("Game ready to log")
         window.setTimeout(() => {
             playthroughLogRef.current?.scrollIntoView({
                 behavior: "smooth",
@@ -212,6 +213,8 @@ export default function DuneImperiumTimer() {
             })
         }, 50)
     }
+
+    const currentTurnTime = getCurrentTurnTime()
 
     return (
         <div className={cn(timerDark && "dark")}>
@@ -276,14 +279,14 @@ export default function DuneImperiumTimer() {
                     </div>
 
                     <Header
-                        currentTurnTime={getCurrentTurnTime()}
+                        currentTurnTime={currentTurnTime}
                         currentRound={currentRound}
                         activePlayersCount={getActivePlayersCount()}
                         roundPhase={roundPhase}
                     />
 
                     <SettingsPanel
-                        showSettings={showSettings || !gameStarted}
+                        showSettings={showSettings}
                         gameStarted={gameStarted}
                         initialTime={initialTime}
                         showAdjustButtons={showAdjustButtons}
@@ -309,11 +312,11 @@ export default function DuneImperiumTimer() {
                         onStartPause={startPauseTimer}
                         onNextTurn={nextTurn}
                         onStartReveal={startRevealTurn}
-                        canUndo={canUndo}
-                        onUndo={undoLastAction}
-                        onEndRound={endRound}
+                        canUndo={canUndo || showPlaythroughLog}
+                        onUndo={handleUndo}
+                        onEndRound={skipToRoundWrapUp}
                         onFinishGameAndLog={handleFinishGameAndLog}
-                        onReset={resetGame}
+                        onReset={handleResetTimer}
                         onToggleSettings={() => setShowSettings(!showSettings)}
                         roomCode={roomCode}
                     />
@@ -381,11 +384,16 @@ export default function DuneImperiumTimer() {
                                                         isActive={
                                                             player.isActive
                                                         }
-                                                        currentTurnTime={getCurrentTurnTime()}
+                                                        currentTurnTime={currentTurnTime}
                                                         gameStarted={
                                                             gameStarted
                                                         }
                                                         isRunning={isRunning}
+                                                        autoResumeSeconds={
+                                                            player.isActive
+                                                                ? autoResumeSeconds
+                                                                : null
+                                                        }
                                                         initialTime={
                                                             initialTime
                                                         }
@@ -480,18 +488,18 @@ export default function DuneImperiumTimer() {
                             </div>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-6 px-1 md:px-0">
+                        <div className="grid grid-cols-1 items-stretch gap-3 px-1 md:gap-6 md:px-0 lg:grid-cols-2">
                             {players.map((player) => (
                                 <div
                                     key={`desktop-card-${player.id}`}
-                                    className={`transition-all duration-300 ease-out ${
+                                    className={`h-full transition-all duration-300 ease-out ${
                                         player.isActive
-                                            ? "transform scale-[1.02] md:scale-105 z-10 shadow-xl dark:shadow-[0_0_48px_-14px_rgba(251,191,36,0.12)]"
-                                            : "transform scale-100 hover:scale-[1.01] z-0 hover:shadow-md dark:hover:shadow-none"
+                                            ? "z-10 shadow-xl dark:shadow-[0_0_48px_-14px_rgba(251,191,36,0.12)]"
+                                            : "z-0 hover:shadow-md dark:hover:shadow-none"
                                     }`}
                                     style={{
                                         transitionProperty:
-                                            "transform, box-shadow, border-color",
+                                            "box-shadow, border-color",
                                         transitionTimingFunction:
                                             "cubic-bezier(0.4, 0, 0.2, 1)",
                                     }}
@@ -499,9 +507,14 @@ export default function DuneImperiumTimer() {
                                     <PlayerCard
                                         player={player}
                                         isActive={player.isActive}
-                                        currentTurnTime={getCurrentTurnTime()}
+                                        currentTurnTime={currentTurnTime}
                                         gameStarted={gameStarted}
                                         isRunning={isRunning}
+                                        autoResumeSeconds={
+                                            player.isActive
+                                                ? autoResumeSeconds
+                                                : null
+                                        }
                                         initialTime={initialTime}
                                         showAdjustButtons={showAdjustButtons}
                                         showColorSelectors={showColorSelectors}

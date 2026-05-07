@@ -32,20 +32,20 @@ export const SettingsPanel = ({
   onToggleColorSelectors,
   onToggleSound,
 }: SettingsPanelProps) => {
-  if (!showSettings && gameStarted) return null
+  if (!showSettings) return null
 
   return (
-    <Card className="mb-8 border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-950 dark:border-white/[0.08] dark:[background-image:none] dark:bg-zinc-900/75 dark:text-zinc-200 dark:shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-blue-800 dark:text-zinc-100">
-          <Settings className="w-5 h-5 dark:text-zinc-500" />
-          Game Settings
+    <Card className="mb-6 border border-blue-200/80 bg-blue-50/65 shadow-sm dark:border-white/[0.08] dark:bg-zinc-900/55 dark:text-zinc-200">
+      <CardHeader className="px-5 pb-2 pt-4">
+        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-blue-800 dark:text-zinc-100">
+          <Settings className="h-4 w-4" />
+          Timer settings
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <Label htmlFor="initial-time" className="text-blue-700 dark:text-zinc-400 font-medium">
-            Initial Time (minutes):
+      <CardContent className="space-y-3 px-5 pb-4 pt-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <Label htmlFor="initial-time" className="text-sm font-medium text-blue-700 dark:text-zinc-300">
+            Starting time
           </Label>
           <Input
             id="initial-time"
@@ -54,39 +54,29 @@ export const SettingsPanel = ({
             max="60"
             value={initialTime / 60}
             onChange={(e) => onInitialTimeChange(Number.parseInt(e.target.value) * 60 || 600)}
-            className="w-20 dark:border-white/10 dark:bg-zinc-950/50 dark:text-zinc-200"
+            className="h-10 w-20 bg-white dark:border-white/10 dark:bg-zinc-950/60"
           />
-          <span className="text-sm text-blue-600 dark:text-zinc-500">({formatTime(initialTime)} per player)</span>
+          <span className="text-sm text-blue-600 dark:text-zinc-400">{formatTime(initialTime)} per player</span>
         </div>
-        <div className="flex items-center gap-4 flex-wrap">
-          <Button
-            onClick={onToggleAdjustButtons}
-            variant="outline"
-            size="sm"
-            className="border-blue-400 text-blue-600 dark:border-white/10 dark:bg-transparent dark:text-zinc-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
-          >
-            {showAdjustButtons ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
-            {showAdjustButtons ? "Hide" : "Show"} Time Adjust Buttons
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={onToggleAdjustButtons} variant="outline" size="sm" className="border-blue-300 bg-white/70 text-blue-700 hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.08]">
+            {showAdjustButtons ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+            {showAdjustButtons ? "Hide" : "Show"} time controls
           </Button>
           {gameStarted && (
             <Button
               onClick={onToggleColorSelectors}
               variant="outline"
               size="sm"
-              className="border-blue-400 text-blue-600 dark:border-white/10 dark:bg-transparent dark:text-zinc-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
+              className="border-blue-300 bg-white/70 text-blue-700 hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
             >
-              {showColorSelectors ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
-              {showColorSelectors ? "Hide" : "Show"} Color Selectors
+              {showColorSelectors ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+              {showColorSelectors ? "Hide" : "Show"} colours
             </Button>
           )}
-          <Button
-            onClick={onToggleSound}
-            variant="outline"
-            size="sm"
-            className="border-blue-400 text-blue-600 dark:border-white/10 dark:bg-transparent dark:text-zinc-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
-          >
-            {soundEnabled ? <VolumeX className="w-4 h-4 mr-2" /> : <Volume2 className="w-4 h-4 mr-2" />}
-            {soundEnabled ? "Disable" : "Enable"} Sound Effects
+          <Button onClick={onToggleSound} variant="outline" size="sm" className="border-blue-300 bg-white/70 text-blue-700 hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.08]">
+            {soundEnabled ? <VolumeX className="mr-2 h-4 w-4" /> : <Volume2 className="mr-2 h-4 w-4" />}
+            {soundEnabled ? "Mute" : "Unmute"} sound
           </Button>
         </div>
       </CardContent>

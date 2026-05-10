@@ -635,6 +635,21 @@ function syncSpiceMustFlowAcquisitionFromVp(
   return [...withoutSmf, { ...base, acquisitionCount: count }]
 }
 
+function syncSpiceMustFlowForForm<T extends { acquisitions?: PlaythroughResultAcquisitionInput[] | null; vpSourcesSpiceMustFlow?: number }>(
+  result: T,
+): T {
+  const acquisitions = result.acquisitions ?? []
+  const summaryValue = validNumber(result.vpSourcesSpiceMustFlow)
+  const itemCount = countSpiceMustFlowAcquisitions(acquisitions)
+  const vpCount = typeof summaryValue === "number" ? summaryValue : itemCount > 0 ? itemCount : undefined
+
+  return {
+    ...result,
+    vpSourcesSpiceMustFlow: vpCount,
+    acquisitions: syncSpiceMustFlowAcquisitionFromVp(acquisitions, vpCount),
+  }
+}
+
 function syncVpSummaryField(
   previousAcquisitions: PlaythroughResultAcquisitionInput[],
   acquisitions: PlaythroughResultAcquisitionInput[],
@@ -2073,7 +2088,8 @@ export const EnhancedAddPlaythroughForm = ({ game, players, onSubmit, onCancel }
 
     setLoading(true)
     try {
-      const derivedResults = deriveResultSet(results, { defaultBaseVp: results.length === 4 ? 1 : 0 })
+      const normalisedResults = results.map(syncSpiceMustFlowForForm)
+      const derivedResults = deriveResultSet(normalisedResults, { defaultBaseVp: normalisedResults.length === 4 ? 1 : 0 })
       const resultsWithPlayerIds = derivedResults.map((result, index) => {
         const existingPlayer = players.find((player) => player.name.toLowerCase() === result.playerName.trim().toLowerCase())
         const derivedResult = withDerivedStats(result, derivedResults, index)

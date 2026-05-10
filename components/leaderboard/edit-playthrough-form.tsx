@@ -667,6 +667,21 @@ function syncSpiceMustFlowAcquisitionFromVp(
   return [...withoutSmf, { ...base, acquisitionCount: count }]
 }
 
+function syncSpiceMustFlowForForm<T extends { acquisitions?: PlaythroughResultAcquisitionInput[] | null; vpSourcesSpiceMustFlow?: number }>(
+  result: T,
+): T {
+  const acquisitions = result.acquisitions ?? []
+  const summaryValue = validNumber(result.vpSourcesSpiceMustFlow)
+  const itemCount = countSpiceMustFlowAcquisitions(acquisitions)
+  const vpCount = typeof summaryValue === "number" ? summaryValue : itemCount > 0 ? itemCount : undefined
+
+  return {
+    ...result,
+    vpSourcesSpiceMustFlow: vpCount,
+    acquisitions: syncSpiceMustFlowAcquisitionFromVp(acquisitions, vpCount),
+  }
+}
+
 function syncVpSummaryField(
   previousAcquisitions: PlaythroughResultAcquisitionInput[],
   acquisitions: PlaythroughResultAcquisitionInput[],
@@ -2042,7 +2057,7 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
         notes: getText(result, "notes"),
       }))
 
-    const initialRanksWithStarters = initialRanks.map((result: PlayerRankInput) => withStarterDeckDefaults(result))
+    const initialRanksWithStarters = initialRanks.map((result: PlayerRankInput) => syncSpiceMustFlowForForm(withStarterDeckDefaults(result)))
     const derivedInitialRanks = deriveResultSet(initialRanksWithStarters, { defaultBaseVp: initialRanksWithStarters.length === 4 ? 1 : 0 }) as PlayerRankInput[]
     setPlayerRanks(derivedInitialRanks)
     setExpandedPlayerId(null)
@@ -2227,7 +2242,8 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
 
     setSubmitting(true)
     try {
-      const derivedResults = deriveResultSet(results, { defaultBaseVp: results.length === 4 ? 1 : 0 }) as PlayerRankInput[]
+      const normalisedResults = results.map(syncSpiceMustFlowForForm)
+      const derivedResults = deriveResultSet(normalisedResults, { defaultBaseVp: normalisedResults.length === 4 ? 1 : 0 }) as PlayerRankInput[]
 
       await onSubmit(
         derivedResults.map((result, index) => {

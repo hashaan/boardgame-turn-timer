@@ -310,7 +310,7 @@ function itemTypeLabel(itemType: AcquisitionItemType): string {
 }
 
 function itemBadgeClass(label: string): string {
-  if (/unsupported|over|unassigned/i.test(label)) return "border-amber-200 bg-amber-50 text-amber-700"
+  if (/unsupported|over|unassigned|not itemised/i.test(label)) return "border-amber-200 bg-amber-50 text-amber-700"
   if (/intrigue|used/i.test(label)) return "border-purple-200 bg-purple-50 text-purple-700"
   if (/wild/i.test(label)) return "border-yellow-200 bg-yellow-50 text-yellow-700"
   if (/matched/i.test(label)) return "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -656,9 +656,9 @@ export function AcquisitionsEditor({
   const unlistedCount = manualSummaryCount !== undefined ? Math.max(0, manualSummaryCount - accountedCount) : 0
   const overAccountedCount = manualSummaryCount !== undefined ? Math.max(0, accountedCount - manualSummaryCount) : 0
   const unlistedText = strengthOnly
-    ? `${unlistedCount} STR unassigned`
+    ? `${unlistedCount} STR not itemised`
     : vpOnly
-      ? `${unlistedCount} VP unassigned`
+      ? `${unlistedCount} VP not itemised`
       : `+${unlistedCount} ${unlistedLabel}`
   const overAccountedText = strengthOnly
     ? `${overAccountedCount} STR over`

@@ -1859,14 +1859,14 @@ function NumberSegmentSelect({
         {label && <Label className="text-xs font-medium text-slate-700">{label}</Label>}
         {warning && <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">{warning}</span>}
       </div>
-      <div className="inline-flex h-9 w-fit max-w-full justify-self-start overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex w-full flex-wrap overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         {options.map((option) => {
           const active = value === option
           return (
             <button
               key={option}
               type="button"
-              className={`min-w-11 border-r border-slate-200 px-3 text-sm font-medium transition last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`h-9 min-w-10 flex-1 border-r border-b border-slate-200 px-2 text-sm font-medium transition last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50 ${
                 active
                   ? warning
                     ? "bg-amber-50 text-amber-700"

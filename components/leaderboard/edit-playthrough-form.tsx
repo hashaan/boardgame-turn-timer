@@ -1883,14 +1883,14 @@ function NumberSegmentSelect({
         {label && <Label className="text-xs font-medium text-slate-700">{label}</Label>}
         {warning && <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">{warning}</span>}
       </div>
-      <div className="inline-flex h-9 w-fit max-w-full justify-self-start overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex w-full flex-wrap overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         {options.map((option) => {
           const active = value === option
           return (
             <button
               key={option}
               type="button"
-              className={`min-w-11 border-r border-slate-200 px-3 text-sm font-medium transition last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`h-9 min-w-10 flex-1 border-r border-b border-slate-200 px-2 text-sm font-medium transition last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50 ${
                 active
                   ? warning
                     ? "bg-amber-50 text-amber-700"
@@ -1932,8 +1932,37 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
   const [archetypes, setArchetypes] = useState<any[]>([])
   const [leadersLoading, setLeadersLoading] = useState(true)
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null)
+  const [showStickyPlayerContext, setShowStickyPlayerContext] = useState(false)
   const [showVpSourcesByPlayer, setShowVpSourcesByPlayer] = useState<Record<number, boolean>>({})
   const [showStrengthSourcesByPlayer, setShowStrengthSourcesByPlayer] = useState<Record<number, boolean>>({})
+
+  useEffect(() => {
+    if (!expandedPlayerId) {
+      setShowStickyPlayerContext(false)
+      return
+    }
+
+    const updateStickyContext = () => {
+      const anchor = Array.from(document.querySelectorAll<HTMLElement>("[data-expanded-player-anchor]"))
+        .find((element) => element.dataset.expandedPlayerAnchor === expandedPlayerId)
+
+      if (!anchor) {
+        setShowStickyPlayerContext(false)
+        return
+      }
+
+      setShowStickyPlayerContext(anchor.getBoundingClientRect().bottom <= 0)
+    }
+
+    updateStickyContext()
+    window.addEventListener("scroll", updateStickyContext, { passive: true })
+    window.addEventListener("resize", updateStickyContext)
+
+    return () => {
+      window.removeEventListener("scroll", updateStickyContext)
+      window.removeEventListener("resize", updateStickyContext)
+    }
+  }, [expandedPlayerId])
 
   const globalAcquisitionCounts = useMemo(() => {
     return playerRanks.reduce<Record<string, number>>((acc, result) => {
@@ -2289,13 +2318,6 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
 
     return (
       <div className="mt-4 grid gap-4 rounded-xl bg-slate-50 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-sm font-semibold">Advanced Stats</h4>
-          </div>
-          {hasAdvancedData(player) && <Badge variant="secondary">Has data</Badge>}
-        </div>
-
         <StatSection title="Outcome and setup" icon={Trophy}>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,18rem)_minmax(0,1fr)]">
             <NumberField id={`score-${index}`} label="Final VP" value={player.score} onChange={(value) => updateField(index, "score", value)} disabled={submitting} widthClass="max-w-64" />
@@ -2877,20 +2899,85 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
 
                   {playthrough?.game_type === "dune" && (
                     <div className="mt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full justify-between rounded-lg border-slate-200 bg-white/80 hover:bg-amber-50"
-                        onClick={() => setExpandedPlayerId(isExpanded ? null : playerRank.id)}
-                        disabled={submitting}
-                      >
-                        <span className="flex items-center gap-2">
-                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          {isExpanded ? "Close editor" : "Open full editor"}
-                        </span>
-                        {hasAdvancedData(playerRank) && <Badge variant="secondary">Has data</Badge>}
-                      </Button>
+                      {isExpanded ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            data-expanded-player-anchor={playerRank.id}
+                            className="w-full justify-between rounded-lg border-slate-200 bg-white/80 hover:bg-amber-50"
+                            onClick={() => setExpandedPlayerId(null)}
+                            disabled={submitting}
+                          >
+                            <span className="flex items-center gap-2">
+                              <ChevronDown className="h-4 w-4" />
+                              Close editor
+                            </span>
+                            {hasAdvancedData(playerRank) && <Badge variant="secondary">Has data</Badge>}
+                          </Button>
+
+                          {showStickyPlayerContext && (
+                            <div className="sticky top-0 z-30 -mx-4 mt-3 border-b border-amber-300 bg-amber-50/95 px-4 py-3 shadow-md ring-1 ring-amber-200/80 backdrop-blur">
+                              <div className="flex flex-wrap items-center gap-3 border-l-4 border-amber-500 pl-3">
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                  onClick={() => setExpandedPlayerId(null)}
+                                  disabled={submitting}
+                                >
+                                  <ChevronDown className="h-4 w-4 shrink-0 text-amber-700" />
+                                  <span className="truncate text-sm font-semibold text-slate-950">
+                                    {playerRank.playerName || `Player ${index + 1}`}
+                                  </span>
+                                </button>
+
+                                <Badge variant="outline" className="shrink-0 border-amber-300 bg-white text-amber-800">
+                                  Rank {playerRank.rank || index + 1}
+                                </Badge>
+
+                                {playerRank.leaderName && (
+                                  <span className="min-w-0 max-w-[14rem] truncate text-sm text-slate-600">
+                                    {playerRank.leaderName}
+                                  </span>
+                                )}
+
+                                {hasAdvancedData(playerRank) && (
+                                  <Badge variant="secondary" className="shrink-0">
+                                    Has data
+                                  </Badge>
+                                )}
+
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 shrink-0 text-slate-700 hover:bg-amber-100"
+                                  onClick={() => setExpandedPlayerId(null)}
+                                  disabled={submitting}
+                                >
+                                  Close editor
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-between rounded-lg border-slate-200 bg-white/80 hover:bg-amber-50"
+                          onClick={() => setExpandedPlayerId(playerRank.id)}
+                          disabled={submitting}
+                        >
+                          <span className="flex items-center gap-2">
+                            <ChevronRight className="h-4 w-4" />
+                            Open full editor
+                          </span>
+                          {hasAdvancedData(playerRank) && <Badge variant="secondary">Has data</Badge>}
+                        </Button>
+                      )}
                       {isExpanded && renderAdvanced(playerRank, index)}
                     </div>
                   )}
@@ -2899,8 +2986,10 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
             })}
           </div>
 
-          <div className="flex items-center justify-between">
-            <Button type="button" variant="outline" size="sm" onClick={addPlayerField} disabled={submitting}>
+          <div className="sticky bottom-0 z-30 -mx-6 -mb-6 mt-6 border-t border-slate-200 bg-white/95 px-6 py-4 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex justify-end gap-2 sm:ml-auto">
+              <Button type="button" variant="outline" size="sm" onClick={addPlayerField} disabled={submitting}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Player
             </Button>
             <div className="flex gap-2">
@@ -2915,6 +3004,8 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                 )}
               </Button>
             </div>
+          </div>
+        </div>
           </div>
 
           {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}

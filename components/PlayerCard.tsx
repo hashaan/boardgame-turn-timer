@@ -60,20 +60,12 @@ const AVAILABLE_COLORS = [
         bar: "bg-green-500",
     },
     {
-        value: "purple",
-        label: "Purple",
-        bg: "bg-purple-50 dark:bg-zinc-900/45",
-        border: "border-purple-200 dark:border-zinc-700/40",
-        text: "text-purple-700 dark:text-violet-300/55",
-        bar: "bg-purple-500",
-    },
-    {
-        value: "rose",
-        label: "Rose",
-        bg: "bg-rose-50 dark:bg-zinc-900/45",
-        border: "border-rose-200 dark:border-zinc-700/40",
-        text: "text-rose-700 dark:text-rose-300/55",
-        bar: "bg-rose-500",
+        value: "yellow",
+        label: "Yellow",
+        bg: "bg-yellow-50 dark:bg-zinc-900/45",
+        border: "border-yellow-200 dark:border-zinc-700/40",
+        text: "text-yellow-700 dark:text-yellow-300/55",
+        bar: "bg-yellow-400",
     },
     {
         value: "red",
@@ -83,31 +75,8 @@ const AVAILABLE_COLORS = [
         text: "text-red-700 dark:text-rose-300/55",
         bar: "bg-red-500",
     },
-    {
-        value: "indigo",
-        label: "Indigo",
-        bg: "bg-indigo-50 dark:bg-zinc-900/45",
-        border: "border-indigo-200 dark:border-zinc-700/40",
-        text: "text-indigo-700 dark:text-indigo-300/55",
-        bar: "bg-indigo-500",
-    },
-    {
-        value: "pink",
-        label: "Pink",
-        bg: "bg-pink-50 dark:bg-zinc-900/45",
-        border: "border-pink-200 dark:border-zinc-700/40",
-        text: "text-pink-700 dark:text-pink-300/50",
-        bar: "bg-pink-500",
-    },
-    {
-        value: "teal",
-        label: "Teal",
-        bg: "bg-teal-50 dark:bg-zinc-900/45",
-        border: "border-teal-200 dark:border-zinc-700/40",
-        text: "text-teal-700 dark:text-teal-300/55",
-        bar: "bg-teal-500",
-    },
 ]
+
 
 interface PlayerCardProps {
     player: Player
@@ -124,6 +93,8 @@ interface PlayerCardProps {
     editingPlayer: number | null
     editName: string
     roundPhase?: TimerPhase
+    onStartPause?: () => void
+    onNextTurn?: () => void
     onPlayerClick?: (playerId: number) => void
     onManualSwitch?: (playerId: number) => void
     onReopenTurn?: (playerId: number) => void
@@ -142,38 +113,54 @@ interface PlayerCardProps {
 }
 
 const getPlayerColorStyles = (color: string) => {
-    const normalizedColor = color === "orange" ? "rose" : color
+    const normalizedColor =
+        color === "purple"
+            ? "yellow"
+            : color === "orange" || color === "rose"
+              ? "red"
+              : color
     const colorOption =
         AVAILABLE_COLORS.find((c) => c.value === normalizedColor) || AVAILABLE_COLORS[0]
     return colorOption
 }
 
 const getAgentTurnLimit = (player: Player) => {
-    return (
+    return Math.max(
+        0,
         BASE_AGENT_TURNS +
-        (player.hasSwordmaster ? 1 : 0) +
-        Math.max(0, player.extraTurnsThisRound ?? 0)
+            (player.hasSwordmaster ? 1 : 0) +
+            Math.floor(Number(player.extraTurnsThisRound ?? 0)),
+    )
+}
+
+const isEarlyReveal = (player: Player) => {
+    return (
+        player.isRevealing &&
+        !player.isOutOfRound &&
+        player.agentTurnsTaken < getAgentTurnLimit(player)
     )
 }
 
 const getCurrentTurnLabel = (player: Player) => {
-    if (player.isOutOfRound) return "Done this round"
+    if (player.isOutOfRound) return "Reveal complete"
     const agentTurnLimit = getAgentTurnLimit(player)
-    if (player.isRevealing) return "Reveal"
+    if (isEarlyReveal(player)) return "Reveal early"
+    if (player.isRevealing || agentTurnLimit === 0) return "Reveal"
     const currentAgentTurn = Math.min(
         Math.max(1, player.agentTurnsTaken),
         agentTurnLimit,
     )
-    return `Agent Turn ${currentAgentTurn}/${agentTurnLimit}`
+    return `Agent turn ${currentAgentTurn}/${agentTurnLimit}`
 }
 
 const getUpcomingTurnLabel = (player: Player) => {
-    if (player.isOutOfRound) return "Done this round"
+    if (player.isOutOfRound) return "Reveal complete"
     const agentTurnLimit = getAgentTurnLimit(player)
-    if (player.isRevealing || player.agentTurnsTaken >= agentTurnLimit) {
+    if (isEarlyReveal(player)) return "Reveal early"
+    if (agentTurnLimit === 0 || player.isRevealing || player.agentTurnsTaken >= agentTurnLimit) {
         return "Reveal"
     }
-    return `Agent Turn ${player.agentTurnsTaken + 1}/${agentTurnLimit}`
+    return `Agent turn ${player.agentTurnsTaken + 1}/${agentTurnLimit}`
 }
 
 type TurnChipState = "completed" | "current" | "next" | "future"
@@ -193,6 +180,8 @@ export const PlayerCard = ({
     editingPlayer,
     editName,
     roundPhase = "player-turns",
+    onStartPause,
+    onNextTurn,
     onPlayerClick,
     onManualSwitch,
     onReopenTurn,
@@ -215,6 +204,7 @@ export const PlayerCard = ({
     const turnBonus = Math.max(0, Number(player.turnBonusAppliedThisTurn ?? 0))
     const agentTurnLimit = getAgentTurnLimit(player)
     const completedAgentTurns = Math.min(player.agentTurnsTaken, agentTurnLimit)
+    const isPlayerEarlyReveal = isEarlyReveal(player)
     const hasStartedSlot =
         gameStarted &&
         (turnBonus > 0 ||
@@ -264,15 +254,23 @@ export const PlayerCard = ({
         completedAgentTurns === 0
             ? null
             : completedAgentTurns
-    const showRemoveTurn = player.extraTurnsThisRound > 0
-    const turnBadgeLabel = player.isOutOfRound
-        ? "Done"
-        : isActive
-          ? `${isRunning ? "Now" : "Paused"}: ${currentTurnLabel}`
-          : `Next: ${upcomingTurnLabel}`
-    const progressLabel = player.isOutOfRound
-        ? "Reveal started"
-        : `${completedAgentTurns}/${agentTurnLimit} agent turns started`
+    const showRemoveTurn = agentTurnLimit > 0
+    const turnBadgeLabel = !gameStarted
+        ? "Ready"
+        : player.isOutOfRound
+          ? "Reveal complete"
+          : isActive
+            ? `${isRunning ? "Now" : "Paused"}: ${currentTurnLabel}`
+            : `Next: ${upcomingTurnLabel}`
+    const progressLabel = !gameStarted
+        ? "Start game to track turns"
+        : player.isOutOfRound
+          ? "Reveal complete"
+          : isPlayerEarlyReveal
+            ? `${completedAgentTurns}/${agentTurnLimit} agent turns completed · revealing early`
+            : agentTurnLimit === 0
+              ? "Reveal only"
+              : `${completedAgentTurns}/${agentTurnLimit} agent turns completed`
     const isRoundWrapUp = roundPhase === "round-wrap-up"
     const isWaitingWhileClockRuns =
         gameStarted && isRunning && !isActive && !player.isOutOfRound
@@ -327,9 +325,9 @@ export const PlayerCard = ({
                 onDrop(player.id)
             }}
             onClick={() => onPlayerClick?.(player.id)}
-            className={`group relative h-full overflow-hidden transition-all duration-300 cursor-default touch-manipulation ${
+            className={`group relative h-full min-h-[27rem] overflow-hidden transition-all duration-300 cursor-default touch-manipulation ${
                 isActive
-                    ? "border border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50 shadow-[0_16px_42px_rgba(217,119,6,0.16)] text-amber-950 dark:border-amber-400/15 dark:[background-image:none] dark:bg-zinc-900/85 dark:text-zinc-100"
+                    ? "border-2 border-amber-500 bg-amber-50/80 text-slate-950 shadow-[0_20px_55px_rgba(217,119,6,0.24)] dark:border-amber-400/60 dark:bg-zinc-900/90 dark:text-zinc-100"
                     : player.isOutOfRound
                       ? "border border-slate-200 bg-slate-50/60 text-slate-400 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 hover:text-slate-500 active:scale-[0.99] dark:border-zinc-700/40 dark:bg-zinc-900/45 dark:text-zinc-500 dark:hover:text-zinc-300"
                       : `border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300 hover:bg-white hover:shadow-md active:scale-[0.99] dark:border-zinc-700/45 dark:bg-zinc-900/45 dark:text-zinc-300 ${isWaitingWhileClockRuns ? "shadow-sm" : ""}`
@@ -344,12 +342,12 @@ export const PlayerCard = ({
             {isActive && (
                 <div
                     aria-hidden="true"
-                    className="absolute inset-x-0 top-0 h-1 rounded-t-xl bg-amber-500/85 dark:bg-amber-400/45"
+                    className="absolute left-3 right-3 top-0 h-1.5 rounded-t-lg bg-amber-500/95 dark:bg-amber-400/65"
                 />
             )}
             <div
                 className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${colors.bar} ${
-                    isActive ? "opacity-30" : player.isOutOfRound ? "opacity-20" : "opacity-35"
+                    isActive ? "opacity-45" : player.isOutOfRound ? "opacity-[0.18]" : "opacity-32"
                 }`}
                 aria-hidden="true"
             />
@@ -382,7 +380,7 @@ export const PlayerCard = ({
                                 <CardTitle
                                     className={`text-xl font-semibold truncate ${
                                         isActive
-                                            ? "text-amber-800 dark:text-amber-100/90"
+                                            ? "text-slate-950 dark:text-zinc-100"
                                             : player.isOutOfRound
                                               ? "text-slate-500 dark:text-zinc-500"
                                               : "text-slate-700 dark:text-zinc-300"
@@ -404,15 +402,15 @@ export const PlayerCard = ({
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
-                        {player.isOutOfRound && (
+                    <div className="flex min-h-8 items-center gap-2 flex-wrap justify-end">
+                        {player.isOutOfRound && !canReopenTurn && (
                             <Badge className="bg-slate-200 text-slate-600 text-xs dark:bg-zinc-700/70 dark:text-zinc-300">
                                 Done
                             </Badge>
                         )}
                         {player.isRevealing && !player.isOutOfRound && (
                             <Badge className="bg-purple-500 text-white text-xs dark:bg-violet-600/25 dark:text-violet-200/90 dark:font-normal">
-                                Revealing
+                                {isPlayerEarlyReveal ? "Revealing early" : "Revealing"}
                             </Badge>
                         )}
                         {isActive && isOvertime && (
@@ -425,8 +423,8 @@ export const PlayerCard = ({
                             <Badge
                                 className={
                                     isRunning
-                                        ? "bg-amber-500 text-white text-xs dark:bg-amber-500/20 dark:text-amber-100/90 dark:font-normal"
-                                        : "bg-slate-700 text-white text-xs dark:bg-white/12 dark:text-zinc-200 dark:font-normal"
+                                        ? "bg-amber-600 text-white text-xs dark:bg-white/15 dark:text-zinc-100 dark:font-normal"
+                                        : "bg-amber-500 text-white text-xs dark:bg-white/12 dark:text-zinc-200 dark:font-normal"
                                 }
                             >
                                 {isRunning ? (
@@ -462,41 +460,44 @@ export const PlayerCard = ({
 
             <CardContent className="pl-6">
                 <div className="space-y-4">
-                    {showColorSelectors && (
-                        <div className="flex items-center gap-2">
-                            <Label className="text-sm text-gray-600 dark:text-zinc-500">
-                                Color:
-                            </Label>
-                            <Select
-                                value={player.color}
-                                onValueChange={(value) =>
-                                    onUpdateColor(player.id, value)
-                                }
+                    <div
+                        className={`flex h-8 items-center gap-2 ${
+                            showColorSelectors ? "" : "invisible pointer-events-none"
+                        }`}
+                        aria-hidden={!showColorSelectors}
+                    >
+                        <Label className="text-sm text-gray-600 dark:text-zinc-500">
+                            Color:
+                        </Label>
+                        <Select
+                            value={player.color}
+                            onValueChange={(value) =>
+                                onUpdateColor(player.id, value)
+                            }
+                        >
+                            <SelectTrigger
+                                className="w-fit h-8"
+                                onClick={(e) => e.stopPropagation()}
                             >
-                                <SelectTrigger
-                                    className="w-fit h-8"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {AVAILABLE_COLORS.map((color) => (
-                                        <SelectItem
-                                            key={color.value}
-                                            value={color.value}
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <div
-                                                    className={`w-3 h-3 rounded-full flex-shrink-0 ${color.bar}`}
-                                                />
-                                                {color.label}
-                                            </div>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    )}
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {AVAILABLE_COLORS.map((color) => (
+                                    <SelectItem
+                                        key={color.value}
+                                        value={color.value}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className={`w-3 h-3 rounded-full flex-shrink-0 ${color.bar}`}
+                                            />
+                                            {color.label}
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
 
                     <div className="text-center">
                         <div
@@ -545,7 +546,49 @@ export const PlayerCard = ({
                         )}
                     </div>
 
-                    {gameStarted && (
+                    <div className="mt-1 flex h-9 items-center justify-center gap-2" aria-label="Local live controls">
+                        {gameStarted && isActive && !isRoundWrapUp && (
+                            <>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={isRunning ? "outline" : "default"}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onStartPause?.()
+                                    }}
+                                    className={`h-8 min-w-[5.75rem] px-3 text-xs font-semibold touch-manipulation ${
+                                        isRunning
+                                            ? "border-slate-300 bg-white/80 text-slate-700 hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
+                                            : "bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500/90 dark:text-zinc-950"
+                                    }`}
+                                    title={isRunning ? "Pause this timer" : "Resume this timer"}
+                                >
+                                    {isRunning ? (
+                                        <Pause className="mr-1.5 h-3.5 w-3.5" />
+                                    ) : (
+                                        <Play className="mr-1.5 h-3.5 w-3.5" />
+                                    )}
+                                    {isRunning ? "Pause" : "Resume"}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onNextTurn?.()
+                                    }}
+                                    className="h-8 min-w-[5.75rem] border-slate-300 bg-white/80 px-3 text-xs font-semibold text-slate-700 hover:bg-white touch-manipulation dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
+                                    title="Finish this turn and move to the next player"
+                                >
+                                    Next turn
+                                </Button>
+                            </>
+                        )}
+                    </div>
+
+                    {(
                         <div
                             className="rounded-xl border border-slate-200 bg-white/70 p-3 text-left shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
                             onClick={(e) => e.stopPropagation()}
@@ -576,7 +619,7 @@ export const PlayerCard = ({
                                                 type="button"
                                                 size="sm"
                                                 variant="outline"
-                                                disabled={!onTurnStageChange || isRoundWrapUp}
+                                                disabled={!gameStarted || !onTurnStageChange || isRoundWrapUp}
                                                 onClick={(e) => {
                                                     e.stopPropagation()
                                                     onTurnStageChange?.(
@@ -599,7 +642,7 @@ export const PlayerCard = ({
                                     type="button"
                                     size="sm"
                                     variant="outline"
-                                    disabled={!onTurnStageChange || isRoundWrapUp}
+                                    disabled={!gameStarted || !onTurnStageChange || isRoundWrapUp}
                                     onClick={(e) => {
                                         e.stopPropagation()
                                         onTurnStageChange?.(player.id, "reveal")
@@ -618,7 +661,7 @@ export const PlayerCard = ({
                                         type="button"
                                         size="sm"
                                         variant="outline"
-                                        disabled={!onAddTurn}
+                                        disabled={!onAddTurn || isRoundWrapUp}
                                         onClick={(e) => {
                                             e.stopPropagation()
                                             onAddTurn?.(player.id)
@@ -634,13 +677,13 @@ export const PlayerCard = ({
                                             type="button"
                                             size="sm"
                                             variant="outline"
-                                            disabled={!onRemoveTurn}
+                                            disabled={!onRemoveTurn || isRoundWrapUp}
                                             onClick={(e) => {
                                                 e.stopPropagation()
                                                 onRemoveTurn?.(player.id)
                                             }}
                                             className="h-8 px-2 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 touch-manipulation dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.07]"
-                                            title="Remove one manually added extra turn"
+                                            title="Remove one Agent turn this round"
                                         >
                                             <span className="text-xs font-medium leading-none">− Turn</span>
                                         </Button>
@@ -650,7 +693,7 @@ export const PlayerCard = ({
                                         type="button"
                                         size="sm"
                                         variant="outline"
-                                        disabled={!onToggleSwordmaster}
+                                        disabled={!onToggleSwordmaster || isRoundWrapUp}
                                         onClick={(e) => {
                                             e.stopPropagation()
                                             onToggleSwordmaster?.(player.id)
@@ -675,7 +718,7 @@ export const PlayerCard = ({
                         </div>
                     )}
 
-                    {gameStarted && (
+                    {(
                         <div
                             className={`space-y-2 ${
                                 isActive
@@ -685,16 +728,16 @@ export const PlayerCard = ({
                                       : "opacity-75 transition-opacity group-hover:opacity-95"
                             }`}
                         >
-                            <div className="flex justify-between text-xs text-gray-600 dark:text-zinc-500">
+                            <div className="flex justify-between text-xs font-medium text-gray-600 dark:text-zinc-500">
                                 <span>Turn bonus</span>
                                 <span className="tabular-nums">{turnBonusLabel}</span>
                             </div>
                             <div
-                                className="h-3 w-full rounded-full bg-gray-200 dark:bg-zinc-800/80"
+                                className="h-2.5 w-full rounded-full bg-gray-200 dark:bg-zinc-800/80"
                                 aria-label="Turn bonus remaining"
                             >
                                 <div
-                                    className={`h-3 rounded-full transition-colors duration-200 ${
+                                    className={`h-2.5 rounded-full transition-colors duration-200 ${
                                         isActive
                                             ? turnProgressColor
                                             : hasStartedSlot
@@ -706,7 +749,7 @@ export const PlayerCard = ({
                                     }}
                                 />
                             </div>
-                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-xs text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
                                 <span>Turn efficiency</span>
                                 <span
                                     className={`rounded-md px-2 py-0.5 font-semibold tabular-nums ${

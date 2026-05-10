@@ -6,16 +6,16 @@ export const GameInfo = () => {
             <CardContent className="p-4">
                 <div className="grid gap-2 text-sm text-amber-700 dark:text-zinc-400 [&_strong]:dark:text-zinc-100 md:grid-cols-2">
                     <p>
-                        <strong>Next turn:</strong> advances one seat clockwise and starts any due slot.
+                        <strong>Next turn:</strong> advances one seat clockwise.
                     </p>
                     <p>
-                        <strong>Turn slots:</strong> filled slots have already received their bonus.
+                        <strong>Turn slots:</strong> filled slots are already complete.
                     </p>
                     <p>
                         <strong>Review:</strong> press ← to revisit a player; it resumes after 3 seconds.
                     </p>
                     <p>
-                        <strong>Click a card:</strong> select that player and resume immediately.
+                        <strong>Click a card:</strong> resumes that player immediately.
                     </p>
                 </div>
             </CardContent>

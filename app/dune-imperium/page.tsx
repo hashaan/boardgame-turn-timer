@@ -39,6 +39,8 @@ export default function DuneImperiumTimer() {
         editName,
         activePlayer,
         currentPlayerIndex,
+        playerOrder,
+        currentOrderIndex,
         autoResumeSeconds,
         canUndo,
         isTransitioning,
@@ -117,8 +119,23 @@ export default function DuneImperiumTimer() {
         })
     }
 
+    const handleShortcutNextTurn = () => {
+        if (roundPhase === "round-wrap-up") return
+        nextTurn()
+    }
+
+    const handleShortcutNextPlayer = () => {
+        if (roundPhase === "round-wrap-up") return
+        nextPlayerCard()
+    }
+
+    const handleShortcutPreviousPlayer = () => {
+        if (roundPhase === "round-wrap-up") return
+        previousPlayerCard()
+    }
+
     useKeyboardShortcuts({
-        onNextTurn: nextTurn,
+        onNextTurn: handleShortcutNextTurn,
         onToggleTimer: startPauseTimer,
         onUndo: () => {
             if (showPlaythroughLog) {
@@ -127,8 +144,8 @@ export default function DuneImperiumTimer() {
             }
             undoLastAction()
         },
-        onNextPlayer: nextPlayerCard,
-        onPreviousPlayer: previousPlayerCard,
+        onNextPlayer: handleShortcutNextPlayer,
+        onPreviousPlayer: handleShortcutPreviousPlayer,
         gameStarted,
     })
 
@@ -150,23 +167,13 @@ export default function DuneImperiumTimer() {
         window.innerWidth < 1024 &&
         !isLandscape
 
-    // Updated mobile navigation handlers to use nextPlayerIndex for transitions
+    // Mobile navigation uses the timer cursor actions.
     const handleMobileNext = () => {
-        if (gameStarted) {
-            nextPlayerCard("right")
-            return
-        }
-        setCurrentPlayerIndex((currentPlayerIndex + 1) % players.length)
+        nextPlayerCard()
     }
 
     const handleMobilePrevious = () => {
-        if (gameStarted) {
-            previousPlayerCard("left")
-            return
-        }
-        setCurrentPlayerIndex(
-            (currentPlayerIndex - 1 + players.length) % players.length,
-        )
+        previousPlayerCard()
     }
 
     const focusPlayerCard = (playerId: number) => {
@@ -204,8 +211,11 @@ export default function DuneImperiumTimer() {
     }
 
     const handleFinishGameAndLog = () => {
+        if (isRunning) {
+            startPauseTimer()
+        }
         setShowPlaythroughLog(true)
-        toast.success("Game ready to log")
+        toast.success("Ready to log playthrough")
         window.setTimeout(() => {
             playthroughLogRef.current?.scrollIntoView({
                 behavior: "smooth",
@@ -215,6 +225,29 @@ export default function DuneImperiumTimer() {
     }
 
     const currentTurnTime = getCurrentTurnTime()
+    const orderedPlayers = (() => {
+        const order = playerOrder.length > 0 ? playerOrder : players.map((player) => player.id)
+        if (order.length === 0) return players
+
+        const safeStart =
+            ((currentOrderIndex % order.length) + order.length) % order.length
+        const rotatedOrder = [
+            ...order.slice(safeStart),
+            ...order.slice(0, safeStart),
+        ]
+        const ordered = rotatedOrder
+            .map((id) => players.find((player) => player.id === id))
+            .filter((player): player is (typeof players)[number] => Boolean(player))
+
+        return ordered.length === players.length ? ordered : players
+    })()
+    const displayPlayers = gameStarted ? orderedPlayers : players
+    const currentDisplayIndex = Math.max(
+        0,
+        displayPlayers.findIndex(
+            (player) => player.id === players[currentPlayerIndex]?.id,
+        ),
+    )
 
     return (
         <div className={cn(timerDark && "dark")}>
@@ -330,12 +363,12 @@ export default function DuneImperiumTimer() {
                     {isMobileView ? (
                         <div className="lg:hidden">
                             <MobileCardNavigation
-                                currentIndex={currentPlayerIndex}
-                                totalCards={players.length}
+                                currentIndex={currentDisplayIndex}
+                                totalCards={displayPlayers.length}
                                 onPrevious={handleMobilePrevious}
                                 onNext={handleMobileNext}
                                 isActivePlayer={
-                                    players[currentPlayerIndex]?.isActive
+                                    displayPlayers[currentDisplayIndex]?.isActive
                                 }
                                 gameStarted={gameStarted}
                                 isRunning={isRunning}
@@ -344,11 +377,11 @@ export default function DuneImperiumTimer() {
 
                             <div className="relative h-[700px] overflow-hidden md:h-[640px]">
                                 <div className="relative w-full h-full">
-                                    {players.map((player, index) => {
+                                    {displayPlayers.map((player, index) => {
                                         const offset =
-                                            index - currentPlayerIndex
+                                            index - currentDisplayIndex
                                         const isActive =
-                                            index === currentPlayerIndex
+                                            index === currentDisplayIndex
 
                                         let translateX = offset * 100
                                         if (isTransitioning && slideDirection) {
@@ -363,7 +396,7 @@ export default function DuneImperiumTimer() {
 
                                         return (
                                             <div
-                                                key={`mobile-card-${player.id}-${currentPlayerIndex}`}
+                                                key={`mobile-card-${player.id}-${currentDisplayIndex}`}
                                                 className={`absolute inset-0 transition-transform ${
                                                     isTransitioning
                                                         ? "duration-500 ease-out"
@@ -408,6 +441,8 @@ export default function DuneImperiumTimer() {
                                                         }
                                                         editName={editName}
                                                         roundPhase={roundPhase}
+                                                        onStartPause={startPauseTimer}
+                                                        onNextTurn={nextTurn}
                                                         onPlayerClick={
                                                             focusPlayerCard
                                                         }
@@ -459,18 +494,18 @@ export default function DuneImperiumTimer() {
                                 </div>
 
                                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
-                                    {players.map((player, index) => (
+                                    {displayPlayers.map((player, index) => (
                                         <div
                                             key={`mobile-indicator-${index}`}
                                             className={`relative transition-all duration-300 ${
-                                                index === currentPlayerIndex
+                                                index === currentDisplayIndex
                                                     ? "scale-125"
                                                     : "hover:scale-110"
                                             }`}
                                         >
                                             <div
                                                 className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                                                    index === currentPlayerIndex
+                                                    index === currentDisplayIndex
                                                         ? "bg-amber-600 shadow-lg ring-2 ring-amber-300 dark:bg-amber-400/70 dark:shadow-none dark:ring-1 dark:ring-amber-400/25"
                                                         : player.isActive
                                                           ? "bg-amber-400 shadow-md dark:bg-amber-500/35 dark:shadow-none"
@@ -489,7 +524,7 @@ export default function DuneImperiumTimer() {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 items-stretch gap-3 px-1 md:gap-6 md:px-0 lg:grid-cols-2">
-                            {players.map((player) => (
+                            {displayPlayers.map((player) => (
                                 <div
                                     key={`desktop-card-${player.id}`}
                                     className={`h-full transition-all duration-300 ease-out ${
@@ -521,6 +556,8 @@ export default function DuneImperiumTimer() {
                                         editingPlayer={editingPlayer}
                                         editName={editName}
                                         roundPhase={roundPhase}
+                                        onStartPause={startPauseTimer}
+                                        onNextTurn={nextTurn}
                                         onPlayerClick={focusPlayerCard}
                                         onManualSwitch={handleManualSwitch}
                                         onReopenTurn={reopenPlayerTurn}

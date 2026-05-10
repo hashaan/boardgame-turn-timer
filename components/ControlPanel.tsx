@@ -29,7 +29,7 @@ interface ControlPanelProps {
     onToggleSettings: () => void
 }
 
-type PendingConfirmation = "skip-wrap-up" | "finish-log" | "reset" | null
+type PendingConfirmation = "finish-log" | "reset" | null
 
 export const ControlPanel = ({
     isRunning,
@@ -64,22 +64,11 @@ export const ControlPanel = ({
     }
 
     const confirmation = (() => {
-        if (pendingConfirmation === "skip-wrap-up") {
-            return {
-                title: "Go to combat?",
-                body: "End the player-turn timer for this round.",
-                confirmLabel: "Go to combat",
-                confirmClass:
-                    "border-slate-300 bg-slate-900 text-white hover:bg-slate-800 dark:border-white/10 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200",
-                onConfirm: onEndRound,
-            }
-        }
-
         if (pendingConfirmation === "finish-log") {
             return {
-                title: "Log this game?",
-                body: "Open the playthrough form and keep the timer state for reference.",
-                confirmLabel: "Open log form",
+                title: "Log playthrough?",
+                body: "Open the playthrough form without clearing the timer. You can use the timer state while entering the result.",
+                confirmLabel: "Open form",
                 confirmClass:
                     "border-amber-500 bg-amber-600 text-white hover:bg-amber-700 dark:border-amber-400/40 dark:bg-amber-500/90 dark:text-zinc-950",
                 onConfirm: onFinishGameAndLog,
@@ -153,20 +142,9 @@ export const ControlPanel = ({
                         >
                             {nextLabel}
                         </Button>
+                    </div>
 
-                        {isRoundWrapUp && onFinishGameAndLog && (
-                            <Button
-                                onClick={() => requestConfirmation("finish-log")}
-                                disabled={!gameStarted}
-                                size="default"
-                                variant="outline"
-                                className="border-amber-600 bg-white/70 px-5 text-amber-800 shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:bg-white/[0.08] dark:hover:text-white"
-                                title="Open the playthrough log form"
-                            >
-                                <Trophy className="mr-2 h-5 w-5" />
-                                Log game
-                            </Button>
-                        )}
+                    <div className="flex flex-wrap items-center justify-center gap-2">
                     </div>
 
                     <div className="flex flex-wrap items-center justify-center gap-2">
@@ -181,7 +159,6 @@ export const ControlPanel = ({
                             <Undo2 className="mr-1.5 h-4 w-4" />
                             Undo
                         </Button>
-
                         {!isRoundWrapUp && activePlayer && !activePlayer.isRevealing && (
                             <Button
                                 onClick={onStartReveal}
@@ -195,16 +172,17 @@ export const ControlPanel = ({
                             </Button>
                         )}
 
-                        {!isRoundWrapUp && (
+
+                        {gameStarted && onFinishGameAndLog && (
                             <Button
-                                onClick={() => requestConfirmation("skip-wrap-up")}
-                                disabled={!gameStarted}
+                                onClick={() => requestConfirmation("finish-log")}
                                 size="sm"
                                 variant="outline"
                                 className={utilityButtonClass}
-                                title="Move to Combat, Makers, and Recall"
+                                title="End the timer and open the playthrough form"
                             >
-                                Go to combat
+                                <Trophy className="mr-1.5 h-4 w-4" />
+                                End game
                             </Button>
                         )}
 

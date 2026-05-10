@@ -9,19 +9,19 @@ const checks = []
 const add = (name, condition, detail) => checks.push({ name, condition, detail })
 
 const files = {
-    page: "app/dune-imperium/page.tsx",
-    controls: "components/ControlPanel.tsx",
-    settings: "components/SettingsPanel.tsx",
-    card: "components/PlayerCard.tsx",
-    info: "components/GameInfo.tsx",
-    mobileNav: "components/MobileCardNavigation.tsx",
-    timerHook: "hooks/useGameTimer.ts",
-    keyboard: "hooks/useKeyboardShortcuts.ts",
-    tsconfig: "tsconfig.json",
+  page: "app/dune-imperium/page.tsx",
+  controls: "components/ControlPanel.tsx",
+  settings: "components/SettingsPanel.tsx",
+  card: "components/PlayerCard.tsx",
+  info: "components/GameInfo.tsx",
+  mobileNav: "components/MobileCardNavigation.tsx",
+  timerHook: "hooks/useGameTimer.ts",
+  keyboard: "hooks/useKeyboardShortcuts.ts",
+  tsconfig: "tsconfig.json",
 }
 
 for (const file of Object.values(files)) {
-    add(`${file} exists`, exists(file), "Missing expected timer file")
+  add(`${file} exists`, exists(file), "Missing expected timer file")
 }
 
 const page = read(files.page)
@@ -33,257 +33,422 @@ const mobileNav = read(files.mobileNav)
 const timerHook = read(files.timerHook)
 const keyboard = read(files.keyboard)
 const tsconfig = read(files.tsconfig)
-const self = read("scripts/check-timer-turn-tracker.mjs")
 
 add(
-    "Guardrail script keeps the shebang first",
-    self.startsWith("#!/usr/bin/env node\n"),
-    "The shebang must be the first line so Node can execute the script.",
+  "Patch folders are excluded from typecheck",
+  tsconfig.includes('"patches"'),
+  "tsconfig should exclude patches/ so extracted patch source files are not compiled.",
 )
 
 add(
-    "Patch source folders are excluded from typecheck",
-    tsconfig.includes('"patches"'),
-    "tsconfig should exclude patches/ so extracted patch source files are not compiled.",
+  "Settings stay collapsed until opened",
+  page.includes("showSettings={showSettings}") &&
+    settings.includes("if (!showSettings) return null") &&
+    !page.includes("showSettings || !gameStarted"),
+  "Settings should not auto-expand before starting the timer.",
 )
 
 add(
-    "Settings stay collapsed unless requested",
-    page.includes("showSettings={showSettings}") &&
-        settings.includes("if (!showSettings) return null") &&
-        !page.includes("showSettings || !gameStarted"),
-    "Settings should not open automatically before the game.",
+  "Top controls keep the live actions simple",
+  controls.includes("Start new game") &&
+    controls.includes("Resume") &&
+    controls.includes("Pause") &&
+    controls.includes("Next turn") &&
+    !controls.includes("Switch here") &&
+    !controls.includes("Return to ") &&
+    !controls.includes("Correction"),
+  "The top panel should expose Start/Resume/Pause and Next turn, not switch/correction terminology.",
 )
 
 add(
-    "Primary controls stay simple",
-    controls.includes("Start new game") &&
-        controls.includes("Next turn") &&
-        controls.includes("Pause") &&
-        controls.includes("Resume") &&
-        !controls.includes("Switch here") &&
-        !controls.includes("Return to ") &&
-        !controls.includes("Correction timer"),
-    "The top panel should expose Start/Pause/Resume and Next turn, not Switch/Return/correction copy.",
+  "Primary controls are larger than utilities",
+  controls.includes("h-14") &&
+    controls.includes("min-w-[11rem]") &&
+    controls.includes("utilityButtonClass") &&
+    controls.includes("h-9") &&
+    controls.includes('size="lg"') &&
+    controls.includes('size="sm"'),
+  "Live timer controls should be visibly larger than utility buttons.",
 )
 
 add(
-    "Primary controls are larger than utilities",
-    controls.includes("h-14") &&
-        controls.includes("min-w-[11rem]") &&
-        controls.includes("h-9") &&
-        controls.includes("utilityButtonClass"),
-    "Live controls should be larger than utility buttons.",
+  "End game stays after Reveal turn in the utility row",
+  controls.includes("End game") &&
+    controls.includes('title="End the timer and open the playthrough form"') &&
+    controls.includes("utilityButtonClass") &&
+    controls.indexOf("Reveal turn") < controls.indexOf("End game") &&
+    !controls.includes("endGamePrimaryClass") &&
+    !controls.includes('isRoundWrapUp ? "Log playthrough" : "End game"'),
+  "End game should stay consistent, secondary, and ordered after Reveal turn to avoid accidental presses.",
 )
 
 add(
-    "Reset copy names the scope clearly",
-    controls.includes("Reset game") &&
-        controls.includes("Timers and turn slots will be cleared.") &&
-        !controls.includes("fresh game"),
-    "Reset should say Reset game and concisely explain what will be cleared.",
+  "Reset copy names the timer scope",
+  controls.includes("Reset game") &&
+    controls.includes("Timers and turn slots will be cleared.") &&
+    !controls.includes("fresh game"),
+  "Reset should say Reset game and briefly state what will be cleared.",
 )
 
 add(
-    "Dune phase skip copy is explicit",
-    controls.includes("Go to combat") &&
-        controls.includes("Combat, Makers, and Recall") &&
-        !controls.includes("Wrap-Up"),
-    "The phase shortcut should be clear without using vague wrap-up copy.",
+  "No manual combat shortcut remains in player-turn controls",
+  !controls.includes("Go to combat") && !controls.includes("skip-wrap-up"),
+  "Player turns should enter cleanup automatically after the last Reveal; no extra Go to combat control should be needed.",
 )
 
 add(
-    "Keyboard shortcuts are wired to timer controls",
-    keyboard.includes("ArrowRight") &&
-        keyboard.includes("ArrowLeft") &&
-        keyboard.includes("Enter") &&
-        keyboard.includes("onNextPlayer") &&
-        keyboard.includes("onPreviousPlayer"),
-    "Keyboard shortcuts should keep arrows and Enter wired to timer navigation.",
+  "Round cleanup starts the next round explicitly",
+  controls.includes("Start round") &&
+    page.includes('if (roundPhase === "round-wrap-up") return') &&
+    timerHook.includes('if (roundPhase === "round-wrap-up") return'),
+  "Keyboard/card navigation should not accidentally start the next round from cleanup.",
 )
 
 add(
-    "Arrow navigation drives the cursor",
-    page.includes("onNextPlayer: nextPlayerCard") &&
-        page.includes("onPreviousPlayer: previousPlayerCard") &&
-        timerHook.includes("completeActiveTurn(1, { autoStartDueSlot: true") &&
-        timerHook.includes("completeActiveTurn(-1, { autoStartDueSlot: false"),
-    "Right/Enter should advance the cursor; left should review the previous player.",
+  "Desktop grid rotates to the current round starter",
+  page.includes("orderedPlayers") &&
+    page.includes("displayPlayers") &&
+    page.includes("currentDisplayIndex") &&
+    page.includes("currentOrderIndex") &&
+    page.includes("playerOrder"),
+  "The visible grid should rotate so the current round starter appears first.",
+)
+
+
+add(
+  "Hook returns round order state for the rotated grid",
+  timerHook.includes("playerOrder,") &&
+    timerHook.includes("currentOrderIndex,") &&
+    page.includes("playerOrder") &&
+    page.includes("currentOrderIndex"),
+  "useGameTimer should return playerOrder/currentOrderIndex when page.tsx consumes them.",
 )
 
 add(
-    "Card click resumes immediately",
-    page.includes("onPlayerClick={focusPlayerCard}") &&
-        page.includes("switchToPlayer(playerId)") &&
-        timerHook.includes("selectPlayerIndex(targetIndex") &&
-        timerHook.includes("autoStart: true") &&
-        timerHook.includes("manual: false"),
-    "Clicking a player card should select that player and resume immediately.",
+  "Keyboard shortcuts wire arrows to cursor navigation",
+  keyboard.includes("ArrowRight") &&
+    keyboard.includes("ArrowLeft") &&
+    page.includes("handleShortcutNextPlayer") &&
+    page.includes("handleShortcutPreviousPlayer"),
+  "Arrow keys should move the timer cursor except during cleanup.",
 )
 
 add(
-    "Arrow review auto-resumes after a short delay",
+  "Card click resumes the selected player during player turns",
+  page.includes("onPlayerClick={focusPlayerCard}") &&
+    page.includes("switchToPlayer(playerId)") &&
+    timerHook.includes('if (roundPhase === "round-wrap-up") return') &&
+    timerHook.includes("autoStart: true") &&
+    timerHook.includes("manual: false"),
+  "Clicking a card should resume that player during player turns, but not reopen cards during cleanup.",
+)
+
+add(
+  "Arrow review pauses and auto-resumes started slots",
+  timerHook.includes("scheduleAutoResume") &&
     timerHook.includes("autoResumeSeconds") &&
-        timerHook.includes("scheduleAutoResume") &&
-        timerHook.includes("seconds = 3") &&
-        card.includes("Resume in ${autoResumeSeconds}s"),
-    "Arrow review should visibly pause, then auto-resume after 3 seconds.",
+    timerHook.includes("completeActiveTurn(-1") &&
+    timerHook.includes("autoStartDueSlot: false") &&
+    card.includes("Resume in"),
+  "Arrow review should pause briefly, then resume a started slot.",
 )
 
 add(
-    "Navigation does not repeatedly charge paused timers",
-    timerHook.includes("shouldSettleRunning = isRunning && turnStartTime !== null") &&
-        timerHook.includes("shouldSettleRunning ? freezeActiveTurn") &&
-        timerHook.includes("if (!turnStartTime) return 0") &&
-        timerHook.includes("localStorage.removeItem(\"dune-timer-turn-start\")"),
-    "Only a running timer session should be settled; paused review movement should be time-neutral.",
+  "Running slot settlement is centralised",
+  timerHook.includes("freezeActiveTurn") &&
+    timerHook.includes("turnBonusAppliedThisTurn") &&
+    timerHook.includes("getLiveTurnTimeRemaining") &&
+    timerHook.includes("shouldSettleRunning"),
+  "Navigation should settle the running slot once rather than repeatedly subtracting time.",
 )
 
 add(
-    "Pause freezes the selected slot once",
-    timerHook.includes("const currentElapsed = getCurrentTurnTime()") &&
-        timerHook.includes("freezeActiveTurn(player, currentElapsed)") &&
-        timerHook.includes("setTurnStartTime(null)") &&
-        timerHook.includes("setPausedElapsedTime(0)"),
-    "Pausing should freeze the current bonus/time state and clear the live start timestamp.",
+  "Finished player turns enter cleanup automatically",
+  timerHook.includes("allPlayersFinishedTurns") &&
+    timerHook.includes("enterRoundWrapUp()") &&
+    timerHook.includes("direction === 1 && allPlayersFinishedTurns(updatedPlayers)"),
+  "Moving forward after the last reveal should enter cleanup automatically.",
 )
 
 add(
-    "Started-slot invariant exists",
-    timerHook.includes("canStartNextSlot") &&
-        timerHook.includes("getPreviousIndexInOrder") &&
-        timerHook.includes("getStartedTurnLevel(previousPlayer) >= nextLevel") &&
-        timerHook.includes("roundStarterIndex"),
-    "Started turn slots should advance as a legal wave through turn order.",
+  "Cleanup supports explicit reveal reopen only",
+  timerHook.includes("reopenPlayerTurn") &&
+    card.includes("Reopen Reveal") &&
+    card.includes("without adding a bonus") &&
+    card.includes("disabled={!gameStarted || !onTurnStageChange || isRoundWrapUp}") &&
+    card.includes("disabled={!onAddTurn || isRoundWrapUp}"),
+  "During cleanup, turn chips/card clicks should not reopen a player; use Reopen Reveal.",
 )
 
 add(
-    "Filled slots are monotonic",
-    timerHook.includes("fillPlayerToStartedLevel") &&
-        timerHook.includes("startNextSlotWithoutActivating") &&
-        !timerHook.includes("agentTurnsTaken: 0,\n                    isRevealing") ,
-    "Manual slot filling should add legal started slots rather than un-filling previous slots.",
+  "Started-slot invariant is explicit",
+  timerHook.includes("canStartNextSlot") &&
+    timerHook.includes("getPreviousIndexInOrder") &&
+    timerHook.includes("cannot overtake") &&
+    timerHook.includes("roundStarterIndex"),
+  "Started turn slots should preserve the clockwise wave and prevent overtaking.",
 )
 
 add(
-    "Turn badge shows next slot after a player has moved on",
-    card.includes("getUpcomingTurnLabel") &&
-        card.includes("player.agentTurnsTaken + 1") &&
-        card.includes("`Next: ${upcomingTurnLabel}`") &&
-        !card.includes('"Started"'),
-    "Inactive players should show the next slot, not Started Agent Turn copy.",
+  "Manual fill uses the same invariant",
+  timerHook.includes("fillPlayerToStartedLevel") &&
+    timerHook.includes("canManuallyFillTargetLevel") &&
+    timerHook.includes("setPlayerTurnStage") &&
+    timerHook.includes("startNextSlotWithoutActivating"),
+  "Manual circle/reveal fills should grant only legal started slots.",
+)
+
+
+add(
+  "Manual fills do not disturb another running player",
+  timerHook.includes("const targetWasActive = Boolean(targetPlayer.isActive)") &&
+    timerHook.includes("if (player.id !== playerId) return player") &&
+    timerHook.includes("targetWasActive && isRunning && turnStartTime !== null") &&
+    timerHook.includes("fillPlayerToStartedLevel"),
+  "Filling another player's circle should not settle or pause the currently running player.",
 )
 
 add(
-    "Paused state is visible on the card",
+  "Manual reveal does not fill unused agent turns",
+  timerHook.includes("getRevealCompletionLevel") &&
+    timerHook.includes("startRevealWithoutActivating") &&
+    timerHook.includes("!canStartNextSlot(players, targetIndex, orderIndices, 1)") &&
+    timerHook.includes("isOutOfRound: true") &&
+    timerHook.includes("isRevealing: false") &&
+    !timerHook.includes("? limit + 1"),
+  "Manual R/Reveal should complete the reveal slot without pretending skipped agent turns received a bonus.",
+)
+
+add(
+  "Manual fill cannot rewind completed slots",
+  timerHook.includes('typeof stage === "number"') &&
+    timerHook.includes("requestedLevel <= currentStartedLevel") &&
+    timerHook.includes("return"),
+  "Clicking an already completed earlier slot should not reopen or unfill that player.",
+)
+
+add(
+  "Manual reveal marks done without consuming spare agents",
+  timerHook.includes("const isRevealStage = stage ===") &&
+    timerHook.includes("projectRevealDone") &&
+    timerHook.includes("startRevealWithoutActivating(player)") &&
+    timerHook.includes("isOutOfRound: true") &&
+    timerHook.includes("isRevealing: false"),
+  "Manual R/reveal should mark the reveal complete without filling spare agent circles.",
+)
+
+add(
+  "Reveal button starts early reveal without filling spare agents",
+  timerHook.includes("const startRevealTurn = () =>") &&
+    timerHook.includes("isRevealing: true") &&
+    timerHook.includes("Math.min(") &&
+    timerHook.includes("getAgentTurnLimit(settledPlayer)") &&
+    timerHook.includes("return prepareActiveTurn(revealBase"),
+  "Reveal turn should start Reveal timing without filling unused agent-turn circles.",
+)
+
+add(
+  "Adding a turn from Reveal moves to the inserted agent turn",
+  timerHook.includes("shouldStartInsertedTurn") &&
+    timerHook.includes("wasAtRevealOrDone") &&
+    timerHook.includes("return prepareActiveTurn(") &&
+    timerHook.includes("extraTurnsThisRound") &&
+    timerHook.includes("+ 1"),
+  "+ Turn should not snap a revealing player back to the previous turn.",
+)
+
+add(
+  "Removing turns can reduce base turns down to Reveal only",
+  timerHook.includes("oldLimit <= 0") &&
+    timerHook.includes("newExtraTurns") &&
+    timerHook.includes("BASE_AGENT_TURNS + (target.hasSwordmaster ? 1 : 0) + newExtraTurns") &&
+    card.includes("Remove one Agent turn this round"),
+  "− Turn should work beyond manually added turns, down to a Reveal-only round.",
+)
+
+add(
+  "Clicking forward from Reveal completes that reveal",
+  timerHook.includes("isForwardInOrder") &&
+    timerHook.includes("shouldEndActiveReveal") &&
+    timerHook.includes("allPlayersFinishedTurns(settledPlayers)"),
+  "Selecting a forward player from Reveal should end the current Reveal; selecting backward should not.",
+)
+
+add(
+  "New round starts the first slot immediately",
+  timerHook.includes("return startNextSlotWithoutActivating({") &&
+    timerHook.includes("isActive: true") &&
+    timerHook.includes("setTurnStartTime(Date.now())"),
+  "Starting a new round should immediately start the new round starter's first slot.",
+)
+
+add(
+  "Turn badge names the current or next slot cleanly",
+  card.includes("getUpcomingTurnLabel") &&
+    card.includes("Next:") &&
+    card.includes("Now") &&
     card.includes("Paused") &&
-        card.includes("Resume in") &&
-        card.includes("<Pause") &&
-        page.includes("autoResumeSeconds="),
-    "A selected paused card should not look like it is silently running.",
+    !card.includes('"Started"'),
+  "Cards should not show stale Started Agent Turn wording.",
 )
 
 add(
-    "Turn bonus and efficiency labels are cohesive",
-    card.includes("Turn bonus") &&
-        card.includes("Turn efficiency") &&
-        card.includes("0s left") &&
-        !card.includes("used up") &&
-        !card.includes("Turn Progress"),
-    "The bar should show turn bonus; the chip should show turn efficiency.",
+  "Turn tracker copy uses completed wording",
+  card.includes("Reveal complete") &&
+    card.includes("agent turns completed") &&
+    !card.includes("credited"),
+  "Turn tracker copy should use completed wording, not credited wording.",
 )
 
 add(
-    "Inactive borders are neutral with colour accents",
-    card.includes("border border-slate-200") &&
-        card.includes("inset-y-3 left-0 w-1") &&
-        card.includes("colors.bar") &&
-        !card.includes("${colors.border}"),
-    "Inactive cards should use neutral borders with subtle colour rails/dots.",
+  "Early reveal is labelled and leaves spare agent circles unfilled",
+  card.includes("Reveal early") &&
+    card.includes("Revealing early") &&
+    card.includes("revealing early") &&
+    timerHook.includes("startRevealWithoutActivating") &&
+    !timerHook.includes("agentTurnsTaken: getAgentTurnLimit(settledPlayer)"),
+  "Early Reveal should be visible in the UI and should not mark unused agent turns as completed.",
 )
 
 add(
-    "Active state is separate from player identity",
-    card.includes("bg-gradient-to-br from-amber-50 to-yellow-50") &&
-        card.includes("absolute inset-x-0 top-0 h-1") &&
-        card.includes("Active") &&
-        card.includes("border border-amber-200"),
-    "Active state should use warm fill/chip/top accent, while player colour remains rail/dot identity.",
+  "Turn bonus and efficiency labels stay cohesive",
+  card.includes("Turn bonus") &&
+    card.includes("Turn efficiency") &&
+    card.includes("0s left") &&
+    !card.includes("used up") &&
+    !card.includes("Turn Progress"),
+  "The bar should show turn bonus and the numeric chip should show turn efficiency.",
 )
 
 add(
-    "Orange is not a player identity colour",
-    timerHook.includes('"rose"') &&
-        card.includes("color === \"orange\" ? \"rose\"") &&
-        !card.includes('value: "orange"'),
-    "Orange should be reserved for app action/current-turn emphasis.",
+  "Card skeleton is stable before and after game start",
+  card.includes("Start game to track turns") &&
+    card.includes("not started") &&
+    page.includes("items-stretch") &&
+    card.includes("group relative h-full") &&
+    card.includes("invisible") &&
+    card.includes("h-8 items-center"),
+  "Cards should reserve the same layout rows before and after the game starts.",
 )
 
 add(
-    "Cards keep a stable grid skeleton",
-    page.includes("grid grid-cols-1") &&
-        page.includes("lg:grid-cols-2") &&
-        page.includes("items-stretch") &&
-        card.includes("group relative h-full") &&
-        card.includes("Turn bonus") &&
-        card.includes("Turn efficiency"),
-    "Desktop cards should stay in fixed grid positions with the same timing skeleton.",
+  "Player identity uses real token colours",
+  card.includes('value: "blue"') &&
+    card.includes('value: "green"') &&
+    card.includes('value: "yellow"') &&
+    card.includes('value: "red"') &&
+    !card.includes('value: "purple"') &&
+    !card.includes('value: "rose"') &&
+    timerHook.includes('"Player 3", "yellow"') &&
+    timerHook.includes('"Player 4", "red"'),
+  "Player colour choices should match the real Dune token colours.",
 )
 
 add(
-    "Help copy stays compact and user-facing",
-    info.includes("Next turn:") &&
-        info.includes("Turn slots:") &&
-        info.includes("Review:") &&
-        info.includes("Click a card:") &&
-        !info.includes("do not unfill") &&
-        !info.includes("implementation"),
-    "The help card should explain the model briefly without sounding like implementation notes.",
+  "Active highlight is clear but separate from token colours",
+  card.includes("border-2 border-amber-500 bg-amber-50/80") &&
+    card.includes("left-3 right-3 top-0 h-1.5 rounded-t-lg bg-amber-500/95") &&
+    card.includes("left-0 w-1") &&
+    card.includes("colors.bar") &&
+    !card.includes("ring-4 ring-amber-400/70") &&
+    !card.includes("pointer-events-none absolute inset-0 rounded-xl border-2") &&
+    !card.includes("border border-slate-800") &&
+    !card.includes("bg-slate-900"),
+  "Active status should be obvious at a glance without masking the player-colour rail/dot.",
 )
 
 add(
-    "Mobile navigation follows timer semantics after game start",
-    page.includes('nextPlayerCard("right")') &&
-        page.includes('previousPlayerCard("left")') &&
-        mobileNav.includes("Paused") &&
-        mobileNav.includes("Active"),
-    "Mobile arrows should use the same timer navigation once the game has started.",
+  "Inactive borders are neutral with colour accents",
+  card.includes("border border-slate-200") &&
+    card.includes("left-0 w-1") &&
+    card.includes("colors.bar") &&
+    !card.includes("border-${colors") &&
+    !card.includes("ring-offset"),
+  "Inactive cards should use neutral borders with a small player-colour rail/dot.",
+)
+
+add(
+  "Done cards are muted but selectable",
+  card.includes("player.isOutOfRound") &&
+    card.includes("text-slate-400") &&
+    card.includes("hover:text-slate-500") &&
+    card.includes("cursor-default"),
+  "Done cards should be quieter without looking disabled.",
 )
 
 
 add(
-    "Page does not reference stale next-player setter",
-    !page.includes("setNextPlayerIndex") && page.includes("setCurrentPlayerIndex(index)"),
-    "Card focus should use the current-player setter; setNextPlayerIndex is not part of the hook API.",
+  "Active card has local live controls",
+  card.includes("Local live controls") &&
+    card.includes("onStartPause?.()") &&
+    card.includes("onNextTurn?.()") &&
+    page.includes("onStartPause={startPauseTimer}") &&
+    page.includes("onNextTurn={nextTurn}"),
+  "The active card should expose local Pause/Resume and Next turn controls so users do not need to reach for the top toolbar.",
 )
 
 add(
-    "Manual reveal chip marks a player done",
-    timerHook.includes('stage === "reveal" || stage === "done"') &&
-        timerHook.includes("isOutOfRound: true") &&
-        timerHook.includes("isRevealing: false") &&
-        card.includes('if (player.isOutOfRound) return "Done this round"'),
-    "Manual R should fill the reveal slot and mark the player done instead of leaving misleading Next Reveal copy.",
+  "End game can open the playthrough log at any time",
+  controls.includes("End game") &&
+    controls.includes("Log playthrough?") &&
+    controls.includes("Open form") &&
+    page.includes("if (isRunning)") &&
+    page.includes("setShowPlaythroughLog(true)"),
+  "Users should be able to stop mid-round and open the playthrough form without clearing timer state.",
 )
 
 add(
-    "Arrow navigation and card clicks have distinct run behaviour",
-    timerHook.includes("scheduleAutoResume(selectedPlayer.id)") &&
-        timerHook.includes("completeActiveTurn(1, { autoStartDueSlot: true, autoResumeReview: true })") &&
-        timerHook.includes("completeActiveTurn(-1, { autoStartDueSlot: false, autoResumeReview: true })") &&
-        timerHook.includes("selectPlayerIndex(targetIndex, {") &&
-        timerHook.includes("autoStart: true") &&
-        timerHook.includes("manual: false"),
-    "Arrows should review with delayed resume, while card clicks resume the clicked player's timer immediately.",
+  "Cards reserve a stable timing skeleton",
+  card.includes("min-h-[27rem]") &&
+    card.includes("Start game to track turns") &&
+    card.includes("not started") &&
+    card.includes("Local live controls") &&
+    card.includes("flex min-h-8 items-center gap-2 flex-wrap justify-end") &&
+    card.includes('aria-hidden={!showColorSelectors}'),
+  "Player cards should reserve timing, status, and setup rows so game start does not resize the grid.",
+)
+
+add(
+  "Timing metric text is consistent",
+  card.includes("Turn bonus") &&
+    card.includes("Turn efficiency") &&
+    card.includes("text-xs font-medium") &&
+    !card.includes("text-[11px] font-medium"),
+  "Turn bonus and Turn efficiency should use the same compact text scale as other supporting card details.",
+)
+
+add(
+  "Mobile navigation exposes paused state",
+  mobileNav.includes("isPaused") &&
+    page.includes("isPaused={gameStarted && !isRunning}"),
+  "Mobile controls should also show when the selected timer is paused.",
+)
+
+add(
+  "Help copy is compact and user-facing",
+  info.includes("Next turn:") &&
+    info.includes("Review:") &&
+    info.includes("Click a card:") &&
+    info.includes("filled slots are already complete") &&
+    !info.includes("do not unfill") &&
+    !info.includes("implementation"),
+  "The helper card should explain the interaction briefly without sounding like a spec.",
+)
+
+add(
+  "No stale next-player setter remains",
+  !page.includes("setNextPlayerIndex") && !timerHook.includes("setNextPlayerIndex"),
+  "Remove stale setNextPlayerIndex references; current cursor state uses currentPlayerIndex.",
 )
 
 const failed = checks.filter((check) => !check.condition)
+
 if (failed.length > 0) {
-    console.error(`Timer turn tracker checks failed (${failed.length}/${checks.length}):`)
-    for (const check of failed) {
-        console.error(`- ${check.name}: ${check.detail}`)
-    }
-    process.exit(1)
+  console.error(`Timer turn tracker checks failed (${failed.length}/${checks.length}):`)
+  for (const check of failed) {
+    console.error(`- ${check.name}: ${check.detail}`)
+  }
+  process.exit(1)
 }
 
 console.log(`✓ Timer turn tracker checks passed (${checks.length}/${checks.length})`)

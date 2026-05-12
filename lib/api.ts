@@ -252,11 +252,12 @@ export const seasonApi = {
     }
   },
 
-  async concludeSeason(groupId: string): Promise<ApiResponse<any>> {
+  async concludeSeason(groupId: string, gameId?: string | null): Promise<ApiResponse<any>> {
     try {
       const response = await fetch(`${API_BASE}/groups/${groupId}/seasons/conclude`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(gameId ? { gameId } : {}),
       })
 
       const data = await response.json()

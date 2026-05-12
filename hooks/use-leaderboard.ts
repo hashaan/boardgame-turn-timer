@@ -444,7 +444,7 @@ export const useLeaderboard = () => {
     if (!selectedGroupId || !selectedGameId) throw new Error("No group or game selected")
 
     debugTime("Conclude Season")
-    const response = await seasonApi.concludeSeason(selectedGroupId)
+    const response = await seasonApi.concludeSeason(selectedGroupId, selectedGameId)
     debugTimeEnd("Conclude Season")
 
     if (!response.success) {

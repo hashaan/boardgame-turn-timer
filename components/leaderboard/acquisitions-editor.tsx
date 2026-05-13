@@ -903,7 +903,7 @@ export function AcquisitionsEditor({
             )}
             {sourceTotalUnknown && (
               <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                total not recorded
+                Total unset
               </span>
             )}
             {unlistedCount > 0 && (

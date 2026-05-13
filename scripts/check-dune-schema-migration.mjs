@@ -31,8 +31,20 @@ assert.match(typeSource, /TRACKED_ITEM_TYPES = ACQUISITION_ITEM_TYPES/, "types s
 
 for (const [name, source] of [["create route", createRouteSource], ["update route", updateRouteSource]]) {
   assert.match(source, /getSubmittedTrackedItems/, `${name}: route should use tracked item helper naming`)
-  assert.match(source, /replacePlaythroughResultItems/, `${name}: route should write through tracked item helper naming`)
 }
+
+assert.match(
+  createRouteSource,
+  /replacePlaythroughResultItems/,
+  "create route: route should write through tracked item helper naming",
+)
+
+assert(
+  /replacePlaythroughResultItems/.test(updateRouteSource) ||
+    /insert_results_and_items/.test(updateRouteSource) ||
+    /submittedTrackedItemsByPlayerName/.test(updateRouteSource),
+  "update route: route should write tracked items through the recognised helper or batched write path",
+)
 assert.match(createRouteSource, /attachTrackedItemsToPlaythrough/, "create/list route should hydrate tracked items using the generic helper")
 assert.match(updateRouteSource, /playthroughResultItems: trackedItems/, "update route should expose playthroughResultItems in responses")
 

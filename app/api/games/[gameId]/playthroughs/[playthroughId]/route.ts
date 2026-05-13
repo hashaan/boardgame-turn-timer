@@ -3,7 +3,6 @@ import { sql, getUserId } from "@/lib/db"
 import {
   attachTrackedItemsToPlaythrough,
   getSubmittedTrackedItems,
-  replacePlaythroughResultItemsForResults,
 } from "@/lib/playthrough-result-items"
 import { createServerTiming } from "@/lib/server-timing"
 
@@ -635,14 +634,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const userId = getUserId(request)
     const { gameId, playthroughId } = await params
-    const body = await request.json()
-    const { results, date } = body
-
-    if (!results || !Array.isArray(results) || results.length === 0) {
-      return timing.json({ success: false, error: "Results are required" }, { status: 400 })
-    }
-
-    const [context] = await sql`
+    const bodyPromise = timing.time("parse_body", () => request.json())
+    const contextPromise = timing.time("load_context", () => sql`
       SELECT
         g.id AS game_id,
         g.group_id,
@@ -658,7 +651,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       LEFT JOIN playthroughs p ON p.id = ${playthroughId} AND p.game_id = g.id
       WHERE g.id = ${gameId} AND ga.user_id = ${userId}
       LIMIT 1
-    `
+    `)
+
+    const [body, [context]] = await Promise.all([bodyPromise, contextPromise])
+    const { results, date } = body
+
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      return timing.json({ success: false, error: "Results are required" }, { status: 400 })
+    }
 
     if (!context) {
       return timing.json({ success: false, error: "Game not found or access denied" }, { status: 404 })
@@ -699,46 +699,71 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return timing.json({ success: false, error: "Each result must include playerName and rank" }, { status: 400 })
     }
 
-    const normalisedPlayerNames = [...new Set(playerNames.map((playerName) => String(playerName).toLowerCase()))]
-    const leaderIds = [
+    const submittedPlayersByName = new Map<string, { id: string; name: string }>()
+    for (const result of results) {
+      const playerId = nullableUuid(firstDefined(result, ["playerId", "player_id"]))
+      const playerName = nullableText(result.playerName)
+      if (playerId && playerName) {
+        submittedPlayersByName.set(playerName.toLowerCase(), { id: playerId, name: playerName })
+      }
+    }
+
+    const playerNamesNeedingLookup = playerNames
+      .filter((playerName): playerName is string => typeof playerName === "string" && playerName.length > 0)
+      .filter((playerName) => !submittedPlayersByName.has(playerName.toLowerCase()))
+    const normalisedPlayerNames = [...new Set(playerNamesNeedingLookup.map((playerName) => playerName.toLowerCase()))]
+    const leaderIdsNeedingLookup = [
       ...new Set(
         results
+          .filter((result: any) => !nullableText(firstDefined(result, ["leaderName", "leader_name", "leader"])))
           .map((result: any) => nullableUuid(firstDefined(result, ["leaderId", "leader_id"])))
           .filter((id: string | null): id is string => id !== null),
       ),
     ]
-    const strategicArchetypeIds = [
+    const strategicArchetypeIdsNeedingLookup = [
       ...new Set(
         results
+          .filter(
+            (result: any) =>
+              !nullableText(
+                firstDefined(result, ["strategicArchetypeName", "strategic_archetype_name", "strategic_archetype"]),
+              ),
+          )
           .map((result: any) => nullableUuid(firstDefined(result, ["strategicArchetypeId", "strategic_archetype_id"])))
           .filter((id: string | null): id is string => id !== null),
       ),
     ]
 
-    const [existingPlayers, leaderRows, strategicArchetypeRows] = await Promise.all([
-      sql`
-        SELECT id, name
-        FROM players
-        WHERE group_id = ${game.group_id}
-          AND LOWER(name) = ANY(${normalisedPlayerNames}::text[])
-      `,
-      game.game_type === "dune" && leaderIds.length > 0
-        ? sql`
+    const [existingPlayers, leaderRows, strategicArchetypeRows] = await timing.time("load_reference_data", () => Promise.all([
+      normalisedPlayerNames.length > 0
+        ? timing.time("load_players", () => sql`
+            SELECT id, name
+            FROM players
+            WHERE group_id = ${game.group_id}
+              AND LOWER(name) = ANY(${normalisedPlayerNames}::text[])
+          `)
+        : Promise.resolve([]),
+      game.game_type === "dune" && leaderIdsNeedingLookup.length > 0
+        ? timing.time("load_leaders", () => sql`
             SELECT id, name
             FROM leaders
-            WHERE id = ANY(${leaderIds}::uuid[])
-          `
+            WHERE id = ANY(${leaderIdsNeedingLookup}::uuid[])
+          `)
         : Promise.resolve([]),
-      game.game_type === "dune" && strategicArchetypeIds.length > 0
-        ? sql`
+      game.game_type === "dune" && strategicArchetypeIdsNeedingLookup.length > 0
+        ? timing.time("load_strategic_archetypes", () => sql`
             SELECT id, name
             FROM strategic_archetypes
-            WHERE id = ANY(${strategicArchetypeIds}::uuid[])
-          `
+            WHERE id = ANY(${strategicArchetypeIdsNeedingLookup}::uuid[])
+          `)
         : Promise.resolve([]),
-    ])
+    ]))
 
     const playersByName = new Map<string, any>()
+    for (const player of submittedPlayersByName.values()) {
+      playersByName.set(String(player.name).toLowerCase(), player)
+    }
+
     for (const player of existingPlayers) {
       playersByName.set(String(player.name).toLowerCase(), player)
     }
@@ -750,12 +775,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     if (missingPlayerNames.length > 0) {
       const missingPlayersPayload = JSON.stringify(missingPlayerNames.map((name) => ({ name })))
-      const insertedPlayers = await sql`
+      const insertedPlayers = await timing.time("insert_missing_players", () => sql`
         INSERT INTO players (name, group_id)
         SELECT player.name, ${game.group_id}
         FROM jsonb_to_recordset(${missingPlayersPayload}::jsonb) AS player(name text)
         RETURNING id, name
-      `
+      `)
 
       for (const player of insertedPlayers) {
         playersByName.set(String(player.name).toLowerCase(), player)
@@ -772,6 +797,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       strategicArchetypesById.set(String(archetype.id), archetype)
     }
 
+    const prepareStartedAt = performance.now()
     const derivedFieldsByIndex = deriveServerResultFields(results.map((result: Record<string, any>) => getResultFields(result)))
     const preparedResults = results.map((result: Record<string, any>, index: number) => {
       const playerName = nullableText(result.playerName)
@@ -867,27 +893,51 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     })
 
+    timing.mark("prepare_results", prepareStartedAt)
+
     const timestampIso = parseDateToIso(date)
     const roundCount = nullableNumber(firstDefined(body, ["roundCount", "round_count"]))
     const notes = body.notes === undefined ? undefined : nullableText(body.notes)
 
-    const [updatedPlaythrough] = await sql`
-      UPDATE playthroughs
-      SET
-        timestamp = COALESCE(${timestampIso}, timestamp),
-        round_count = COALESCE(${roundCount}, round_count),
-        notes = CASE WHEN ${body.notes === undefined} THEN notes ELSE ${notes} END
-      WHERE id = ${playthroughId}
-      RETURNING id, game_id, group_id, timestamp, recorded_by, season_id, round_count, round_count AS "roundCount", notes
-    `
-
-    await sql`
-      DELETE FROM playthrough_results
-      WHERE playthrough_id = ${playthroughId}
-    `
-
     const resultPayload = JSON.stringify(preparedResults)
-    const insertedResults = await sql`
+
+    const updateAndDeleteRows = await timing.time("update_and_delete_results", () => sql`
+      WITH updated_playthrough AS (
+        UPDATE playthroughs
+        SET
+          timestamp = COALESCE(${timestampIso}, timestamp),
+          round_count = COALESCE(${roundCount}, round_count),
+          notes = CASE WHEN ${body.notes === undefined} THEN notes ELSE ${notes} END
+        WHERE id = ${playthroughId}
+        RETURNING id, game_id, group_id, timestamp, recorded_by, season_id, round_count, round_count AS "roundCount", notes
+      ), deleted_results AS (
+        DELETE FROM playthrough_results
+        WHERE playthrough_id = (SELECT id FROM updated_playthrough)
+      )
+      SELECT *
+      FROM updated_playthrough
+    `)
+    const [updatedPlaythrough] = updateAndDeleteRows
+    const trackedItemRows = results.flatMap((result: Record<string, any>, rowIndex: number) =>
+      getSubmittedTrackedItems(result).map((item) => ({
+        row_index: rowIndex,
+        item_key: item.itemKey,
+        item_name: item.itemName,
+        item_type: item.itemType,
+        deck_id: item.deckId,
+        source: item.source ?? null,
+        acquisition_count: item.acquisitionCount,
+        item_status: item.itemStatus ?? item.item_status ?? null,
+        vp_count: item.vpCount ?? item.vp_count ?? 0,
+        strength_count: item.strengthCount ?? item.strength_count ?? 0,
+        entry_source: item.entrySource ?? item.entry_source ?? null,
+        acquisition_method: item.acquisitionMethod ?? null,
+        notes: item.notes ?? null,
+      })),
+    )
+    const trackedItemPayload = JSON.stringify(trackedItemRows)
+
+    const insertedResults = await timing.time("insert_results_and_items", () => sql`
       WITH input AS (
         SELECT *
         FROM jsonb_to_recordset(${resultPayload}::jsonb) AS result(
@@ -1085,34 +1135,85 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         FROM input
         ORDER BY input.row_index
         RETURNING *
+      ), item_input AS (
+        SELECT *
+        FROM jsonb_to_recordset(${trackedItemPayload}::jsonb) AS item(
+          row_index integer,
+          item_key text,
+          item_name text,
+          item_type text,
+          deck_id text,
+          source text,
+          acquisition_count integer,
+          item_status text,
+          vp_count integer,
+          strength_count integer,
+          entry_source text,
+          acquisition_method text,
+          notes text
+        )
+      ), inserted_items AS (
+        INSERT INTO playthrough_result_items (
+          playthrough_id,
+          playthrough_result_id,
+          player_id,
+          item_key,
+          item_name,
+          item_type,
+          deck_id,
+          source,
+          acquisition_count,
+          item_status,
+          vp_count,
+          strength_count,
+          entry_source,
+          acquisition_method,
+          notes
+        )
+        SELECT
+          ${playthroughId}::uuid,
+          inserted.id,
+          inserted.player_id,
+          item_input.item_key,
+          item_input.item_name,
+          item_input.item_type,
+          item_input.deck_id,
+          item_input.source,
+          item_input.acquisition_count,
+          item_input.item_status,
+          item_input.vp_count,
+          item_input.strength_count,
+          item_input.entry_source,
+          item_input.acquisition_method,
+          item_input.notes
+        FROM item_input
+        INNER JOIN input ON input.row_index = item_input.row_index
+        INNER JOIN inserted ON inserted.rank = input.rank
+        ON CONFLICT (playthrough_result_id, item_key)
+        DO UPDATE SET
+          item_name = EXCLUDED.item_name,
+          item_type = EXCLUDED.item_type,
+          deck_id = EXCLUDED.deck_id,
+          source = EXCLUDED.source,
+          acquisition_count = EXCLUDED.acquisition_count,
+          item_status = EXCLUDED.item_status,
+          vp_count = EXCLUDED.vp_count,
+          strength_count = EXCLUDED.strength_count,
+          entry_source = EXCLUDED.entry_source,
+          acquisition_method = EXCLUDED.acquisition_method,
+          notes = EXCLUDED.notes
+        RETURNING id
       )
       SELECT inserted.*, input.row_index
       FROM inserted
       INNER JOIN input ON input.rank = inserted.rank
       ORDER BY input.row_index
-    `
+    `)
 
-    const trackedItemGroups: Array<{
-      playthroughResultId: string
-      playerId: string | null
-      items: ReturnType<typeof getSubmittedTrackedItems>
-    }> = insertedResults.map((row: any) => {
-      const originalResult = results[Number(row.row_index)]
-
-      return {
-        playthroughResultId: row.id,
-        playerId: row.player_id,
-        items: getSubmittedTrackedItems(originalResult),
-      }
-    })
-
-    await replacePlaythroughResultItemsForResults({
-      playthroughId,
-      results: trackedItemGroups,
-    })
-
+    const responseStartedAt = performance.now()
     const playthroughResults = insertedResults.map((row: any) => {
-      const trackedItems = trackedItemGroups.find((group) => group.playthroughResultId === row.id)?.items ?? []
+      const originalResult = results[Number(row.row_index)]
+      const trackedItems = originalResult ? getSubmittedTrackedItems(originalResult) : []
 
       return {
         ...toResponseResult(row),
@@ -1131,6 +1232,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       hasFullDetails: true,
       results: playthroughResults,
     }
+
+    timing.mark("build_response", responseStartedAt)
 
     return timing.json({ success: true, data: response })
   } catch (error) {

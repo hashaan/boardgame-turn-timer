@@ -368,15 +368,25 @@ export const useLeaderboard = () => {
 
     track("playthrough_added", { player_count: results.length, has_game: !!gameId })
 
-    // Force a full refresh so the UI reflects the new playthrough.
-    await Promise.all([
-      loadPlaythroughsForGame(gameId),
-      selectedGroupId ? loadPlayersForGroup(selectedGroupId) : Promise.resolve(),
-      selectedGroupId && selectedGameId ? loadCurrentSeasonForGame(selectedGroupId, selectedGameId) : Promise.resolve(),
-    ])
+    setPlaythroughs((prev) => {
+      const withoutDuplicate = prev.filter((playthrough) => playthrough.id !== response.data.id)
+      return [response.data, ...withoutDuplicate]
+    })
 
-    // Let state updates settle before refreshing.
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    const existingPlayerNames = new Set(
+      players
+        .filter((player) => !selectedGroupId || player.group_id === selectedGroupId)
+        .map((player) => player.name.trim().toLowerCase()),
+    )
+    const submittedPlayerNames = results
+      .map((result) => result.playerName?.trim().toLowerCase())
+      .filter((name): name is string => Boolean(name))
+    const createdOrUnknownPlayer = submittedPlayerNames.some((name) => !existingPlayerNames.has(name))
+
+    await Promise.all([
+      selectedGroupId && createdOrUnknownPlayer ? loadPlayersForGroup(selectedGroupId) : Promise.resolve(),
+      selectedGroupId ? loadCurrentSeasonForGame(selectedGroupId, gameId) : Promise.resolve(),
+    ])
 
     return response.data
   }

@@ -27,12 +27,14 @@ interface EditPlaythroughFormProps {
 
 interface PlayerRankInput {
   id: string
+  playerId?: string
   playerName: string
   rank: string
   isNewPlayer: boolean
   leaderId?: string
   leaderName?: string
   strategicArchetypeId?: string
+  strategicArchetypeName?: string
 
   score?: number
   turnOrderPosition?: number
@@ -2053,12 +2055,14 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
       .sort((a: any, b: any) => a.rank - b.rank)
       .map((result: any) => ({
         id: crypto.randomUUID(),
+        playerId: getText(result, "playerId", "player_id"),
         playerName: result.playerName,
         rank: result.rank.toString(),
         isNewPlayer: !existingPlayers.some((player) => player.name.toLowerCase() === result.playerName.toLowerCase()),
         leaderId: getText(result, "leaderId", "leader_id"),
         leaderName: getText(result, "leaderName", "leader_name", "leader"),
         strategicArchetypeId: getText(result, "strategicArchetypeId", "strategic_archetype_id"),
+        strategicArchetypeName: getText(result, "strategicArchetypeName", "strategic_archetype_name", "strategic_archetype"),
         score: getNumber(result, "score", "finalVp", "final_vp", "victory_points"),
         turnOrderPosition: getNumber(result, "turnOrderPosition", "turn_order_position", "turnOrder"),
         vpSourcesBase: getNumber(result, "vpSourcesBase", "vp_sources_base"),
@@ -2141,13 +2145,16 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
   const updateField = <K extends keyof PlayerRankInput>(index: number, field: K, value: PlayerRankInput[K]) => {
     const updatedRanks = [...playerRanks]
     const previous = updatedRanks[index]
-    let updated = {
+    const exactPlayerMatch =
+      field === "playerName"
+        ? existingPlayers.find((player) => player.name.toLowerCase() === String(value).trim().toLowerCase())
+        : undefined
+
+    let updated: PlayerRankInput = {
       ...previous,
       [field]: value,
-      isNewPlayer:
-        field === "playerName"
-          ? !existingPlayers.some((player) => player.name.toLowerCase() === String(value).toLowerCase())
-          : previous.isNewPlayer,
+      isNewPlayer: field === "playerName" ? !exactPlayerMatch : previous.isNewPlayer,
+      playerId: field === "playerName" ? exactPlayerMatch?.id : previous.playerId,
     }
 
 
@@ -2210,8 +2217,17 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
   }
 
   const selectExistingPlayer = (index: number, player: Player) => {
-    updateField(index, "playerName", player.name)
+    const updatedRanks = [...playerRanks]
+    updatedRanks[index] = {
+      ...updatedRanks[index],
+      playerId: player.id,
+      playerName: player.name,
+      isNewPlayer: false,
+    }
+
+    setPlayerRanks(deriveResultSet(updatedRanks, { defaultBaseVp: updatedRanks.length === 4 ? 1 : 0 }) as PlayerRankInput[])
     setShowPlayerSuggestions((prev) => ({ ...prev, [playerRanks[index].id]: false }))
+    setError(null)
   }
 
   const addPlayerField = () => {

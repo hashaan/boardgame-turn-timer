@@ -816,11 +816,12 @@ export function AcquisitionsEditor({
     const currentStatus = getItemStatus(item)
     const nextStatus: AcquisitionItemStatus =
       item.itemType === "contract" && currentStatus === itemStatus ? "not_set" : itemStatus
+    const source = item.entrySource ?? item.entry_source ?? "manual"
 
     updateItem(itemKey, {
       itemStatus: nextStatus,
       vpCount: item.itemType === "intrigue_card" && nextStatus === "held" ? 0 : item.vpCount,
-      entrySource: "manual",
+      entrySource: source,
       acquisitionMethod: undefined,
     })
   }

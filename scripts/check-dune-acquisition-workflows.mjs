@@ -105,4 +105,19 @@ for (const [name, source] of [["add form", addFormSource], ["edit form", editFor
 }
 
 rmSync(buildDir, { recursive: true, force: true })
+
+assert.match(
+  editorSource,
+  /const source = item\.entrySource \?\? item\.entry_source \?\? "manual"[\s\S]*entrySource: source/,
+  "Changing status should preserve VP or strength source membership",
+)
+
+const updateStatusSource = editorSource.match(/const updateStatus[\s\S]*?(?=\n\n  const clearSection)/)?.[0] ?? ""
+assert(updateStatusSource, "Acquisitions editor should expose updateStatus")
+assert.doesNotMatch(
+  updateStatusSource,
+  /entrySource:\s*"manual"/,
+  "Changing status should not release source-picked cards from their section",
+)
+
 console.log("✓ Dune acquisition workflow checks passed")

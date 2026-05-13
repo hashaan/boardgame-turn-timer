@@ -634,14 +634,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const userId = getUserId(request)
     const { gameId, playthroughId } = await params
-    const body = await timing.time("parse_body", () => request.json())
-    const { results, date } = body
-
-    if (!results || !Array.isArray(results) || results.length === 0) {
-      return timing.json({ success: false, error: "Results are required" }, { status: 400 })
-    }
-
-    const [context] = await timing.time("load_context", () => sql`
+    const bodyPromise = timing.time("parse_body", () => request.json())
+    const contextPromise = timing.time("load_context", () => sql`
       SELECT
         g.id AS game_id,
         g.group_id,
@@ -658,6 +652,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       WHERE g.id = ${gameId} AND ga.user_id = ${userId}
       LIMIT 1
     `)
+
+    const [body, [context]] = await Promise.all([bodyPromise, contextPromise])
+    const { results, date } = body
+
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      return timing.json({ success: false, error: "Results are required" }, { status: 400 })
+    }
 
     if (!context) {
       return timing.json({ success: false, error: "Game not found or access denied" }, { status: 404 })

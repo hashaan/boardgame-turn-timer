@@ -27,6 +27,9 @@ const allCheck = read(allCheckPath)
 const requiredStages = [
   "parse_body",
   "load_context",
+  "bodyPromise",
+  "contextPromise",
+  "Promise.all([bodyPromise, contextPromise])",
   "load_reference_data",
   "load_players",
   "load_leaders",

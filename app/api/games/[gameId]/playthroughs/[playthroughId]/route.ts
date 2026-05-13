@@ -3,7 +3,6 @@ import { sql, getUserId } from "@/lib/db"
 import {
   attachTrackedItemsToPlaythrough,
   getSubmittedTrackedItems,
-  replacePlaythroughResultItemsForResults,
 } from "@/lib/playthrough-result-items"
 import { createServerTiming } from "@/lib/server-timing"
 
@@ -893,7 +892,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       FROM updated_playthrough
     `)
     const [updatedPlaythrough] = updateAndDeleteRows
-    const insertedResults = await timing.time("insert_results", () => sql`
+    const trackedItemRows = results.flatMap((result: Record<string, any>, rowIndex: number) =>
+      getSubmittedTrackedItems(result).map((item) => ({
+        row_index: rowIndex,
+        item_key: item.itemKey,
+        item_name: item.itemName,
+        item_type: item.itemType,
+        deck_id: item.deckId,
+        source: item.source ?? null,
+        acquisition_count: item.acquisitionCount,
+        item_status: item.itemStatus ?? item.item_status ?? null,
+        vp_count: item.vpCount ?? item.vp_count ?? 0,
+        strength_count: item.strengthCount ?? item.strength_count ?? 0,
+        entry_source: item.entrySource ?? item.entry_source ?? null,
+        acquisition_method: item.acquisitionMethod ?? null,
+        notes: item.notes ?? null,
+      })),
+    )
+    const trackedItemPayload = JSON.stringify(trackedItemRows)
+
+    const insertedResults = await timing.time("insert_results_and_items", () => sql`
       WITH input AS (
         SELECT *
         FROM jsonb_to_recordset(${resultPayload}::jsonb) AS result(
@@ -1091,6 +1109,74 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         FROM input
         ORDER BY input.row_index
         RETURNING *
+      ), item_input AS (
+        SELECT *
+        FROM jsonb_to_recordset(${trackedItemPayload}::jsonb) AS item(
+          row_index integer,
+          item_key text,
+          item_name text,
+          item_type text,
+          deck_id text,
+          source text,
+          acquisition_count integer,
+          item_status text,
+          vp_count integer,
+          strength_count integer,
+          entry_source text,
+          acquisition_method text,
+          notes text
+        )
+      ), inserted_items AS (
+        INSERT INTO playthrough_result_items (
+          playthrough_id,
+          playthrough_result_id,
+          player_id,
+          item_key,
+          item_name,
+          item_type,
+          deck_id,
+          source,
+          acquisition_count,
+          item_status,
+          vp_count,
+          strength_count,
+          entry_source,
+          acquisition_method,
+          notes
+        )
+        SELECT
+          ${playthroughId}::uuid,
+          inserted.id,
+          inserted.player_id,
+          item_input.item_key,
+          item_input.item_name,
+          item_input.item_type,
+          item_input.deck_id,
+          item_input.source,
+          item_input.acquisition_count,
+          item_input.item_status,
+          item_input.vp_count,
+          item_input.strength_count,
+          item_input.entry_source,
+          item_input.acquisition_method,
+          item_input.notes
+        FROM item_input
+        INNER JOIN input ON input.row_index = item_input.row_index
+        INNER JOIN inserted ON inserted.rank = input.rank
+        ON CONFLICT (playthrough_result_id, item_key)
+        DO UPDATE SET
+          item_name = EXCLUDED.item_name,
+          item_type = EXCLUDED.item_type,
+          deck_id = EXCLUDED.deck_id,
+          source = EXCLUDED.source,
+          acquisition_count = EXCLUDED.acquisition_count,
+          item_status = EXCLUDED.item_status,
+          vp_count = EXCLUDED.vp_count,
+          strength_count = EXCLUDED.strength_count,
+          entry_source = EXCLUDED.entry_source,
+          acquisition_method = EXCLUDED.acquisition_method,
+          notes = EXCLUDED.notes
+        RETURNING id
       )
       SELECT inserted.*, input.row_index
       FROM inserted
@@ -1098,28 +1184,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ORDER BY input.row_index
     `)
 
-    const trackedItemGroups: Array<{
-      playthroughResultId: string
-      playerId: string | null
-      items: ReturnType<typeof getSubmittedTrackedItems>
-    }> = insertedResults.map((row: any) => {
-      const originalResult = results[Number(row.row_index)]
-
-      return {
-        playthroughResultId: row.id,
-        playerId: row.player_id,
-        items: getSubmittedTrackedItems(originalResult),
-      }
-    })
-
-    await timing.time("replace_tracked_items", () => replacePlaythroughResultItemsForResults({
-      playthroughId,
-      results: trackedItemGroups,
-    }))
-
     const responseStartedAt = performance.now()
     const playthroughResults = insertedResults.map((row: any) => {
-      const trackedItems = trackedItemGroups.find((group) => group.playthroughResultId === row.id)?.items ?? []
+      const originalResult = results[Number(row.row_index)]
+      const trackedItems = originalResult ? getSubmittedTrackedItems(originalResult) : []
 
       return {
         ...toResponseResult(row),

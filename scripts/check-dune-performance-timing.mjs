@@ -34,8 +34,7 @@ const requiredStages = [
   "insert_missing_players",
   "prepare_results",
   "update_and_delete_results",
-  "insert_results",
-  "replace_tracked_items",
+  "insert_results_and_items",
   "build_response",
   "total",
 ]
@@ -48,15 +47,14 @@ for (const stage of requiredStages) {
 
 const requiredSnippets = [
   "createServerTiming",
-  "replacePlaythroughResultItemsForResults",
-  'timing.time("load_players"',
-  'timing.time("load_leaders"',
-  'timing.time("load_strategic_archetypes"',
-  'timing.time("update_and_delete_results"',
+  'timing.time("insert_results_and_items"',
+  "trackedItemPayload",
+  "item_input AS",
+  "inserted_items AS",
+  "INSERT INTO playthrough_result_items",
+  "ON CONFLICT (playthrough_result_id, item_key)",
   "WITH updated_playthrough AS",
   "deleted_results AS",
-  "WHERE playthrough_id = (SELECT id FROM updated_playthrough)",
-  'timing.time("insert_results"',
 ]
 
 for (const snippet of requiredSnippets) {
@@ -65,12 +63,16 @@ for (const snippet of requiredSnippets) {
   }
 }
 
-if (route.includes('timing.time("update_playthrough"')) {
-  failures.push("Update and result deletion should be measured as one combined DB round trip")
+if (route.includes('timing.time("insert_results"')) {
+  failures.push("Result row insertion should be folded into insert_results_and_items")
 }
 
-if (route.includes('timing.time("delete_results"')) {
-  failures.push("Result deletion should be folded into update_and_delete_results")
+if (route.includes('timing.time("replace_tracked_items"')) {
+  failures.push("Tracked item insertion should be folded into insert_results_and_items")
+}
+
+if (route.includes("replacePlaythroughResultItemsForResults")) {
+  failures.push("Update route should not call the separate tracked-item replacement helper")
 }
 
 if (!allCheck.includes("check-dune-performance-timing.mjs")) {

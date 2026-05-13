@@ -716,25 +716,25 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     ]
 
     const [existingPlayers, leaderRows, strategicArchetypeRows] = await timing.time("load_reference_data", () => Promise.all([
-      sql`
+      timing.time("load_players", () => sql`
         SELECT id, name
         FROM players
         WHERE group_id = ${game.group_id}
           AND LOWER(name) = ANY(${normalisedPlayerNames}::text[])
-      `,
+      `),
       game.game_type === "dune" && leaderIds.length > 0
-        ? sql`
+        ? timing.time("load_leaders", () => sql`
             SELECT id, name
             FROM leaders
             WHERE id = ANY(${leaderIds}::uuid[])
-          `
+          `)
         : Promise.resolve([]),
       game.game_type === "dune" && strategicArchetypeIds.length > 0
-        ? sql`
+        ? timing.time("load_strategic_archetypes", () => sql`
             SELECT id, name
             FROM strategic_archetypes
             WHERE id = ANY(${strategicArchetypeIds}::uuid[])
-          `
+          `)
         : Promise.resolve([]),
     ]))
 
@@ -874,22 +874,25 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const roundCount = nullableNumber(firstDefined(body, ["roundCount", "round_count"]))
     const notes = body.notes === undefined ? undefined : nullableText(body.notes)
 
-    const [updatedPlaythrough] = await timing.time("update_playthrough", () => sql`
-      UPDATE playthroughs
-      SET
-        timestamp = COALESCE(${timestampIso}, timestamp),
-        round_count = COALESCE(${roundCount}, round_count),
-        notes = CASE WHEN ${body.notes === undefined} THEN notes ELSE ${notes} END
-      WHERE id = ${playthroughId}
-      RETURNING id, game_id, group_id, timestamp, recorded_by, season_id, round_count, round_count AS "roundCount", notes
-    `)
-
-    await timing.time("delete_results", () => sql`
-      DELETE FROM playthrough_results
-      WHERE playthrough_id = ${playthroughId}
-    `)
-
     const resultPayload = JSON.stringify(preparedResults)
+
+    const updateAndDeleteRows = await timing.time("update_and_delete_results", () => sql`
+      WITH updated_playthrough AS (
+        UPDATE playthroughs
+        SET
+          timestamp = COALESCE(${timestampIso}, timestamp),
+          round_count = COALESCE(${roundCount}, round_count),
+          notes = CASE WHEN ${body.notes === undefined} THEN notes ELSE ${notes} END
+        WHERE id = ${playthroughId}
+        RETURNING id, game_id, group_id, timestamp, recorded_by, season_id, round_count, round_count AS "roundCount", notes
+      ), deleted_results AS (
+        DELETE FROM playthrough_results
+        WHERE playthrough_id = (SELECT id FROM updated_playthrough)
+      )
+      SELECT *
+      FROM updated_playthrough
+    `)
+    const [updatedPlaythrough] = updateAndDeleteRows
     const insertedResults = await timing.time("insert_results", () => sql`
       WITH input AS (
         SELECT *

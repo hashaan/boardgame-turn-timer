@@ -28,10 +28,12 @@ const requiredStages = [
   "parse_body",
   "load_context",
   "load_reference_data",
+  "load_players",
+  "load_leaders",
+  "load_strategic_archetypes",
   "insert_missing_players",
   "prepare_results",
-  "update_playthrough",
-  "delete_results",
+  "update_and_delete_results",
   "insert_results",
   "replace_tracked_items",
   "build_response",
@@ -44,12 +46,31 @@ for (const stage of requiredStages) {
   }
 }
 
-if (!route.includes("createServerTiming")) {
-  failures.push("Update route should use createServerTiming")
+const requiredSnippets = [
+  "createServerTiming",
+  "replacePlaythroughResultItemsForResults",
+  'timing.time("load_players"',
+  'timing.time("load_leaders"',
+  'timing.time("load_strategic_archetypes"',
+  'timing.time("update_and_delete_results"',
+  "WITH updated_playthrough AS",
+  "deleted_results AS",
+  "WHERE playthrough_id = (SELECT id FROM updated_playthrough)",
+  'timing.time("insert_results"',
+]
+
+for (const snippet of requiredSnippets) {
+  if (!route.includes(snippet)) {
+    failures.push(`Missing performance guard snippet: ${snippet}`)
+  }
 }
 
-if (!route.includes("replacePlaythroughResultItemsForResults")) {
-  failures.push("Update route should still replace tracked items through replacePlaythroughResultItemsForResults")
+if (route.includes('timing.time("update_playthrough"')) {
+  failures.push("Update and result deletion should be measured as one combined DB round trip")
+}
+
+if (route.includes('timing.time("delete_results"')) {
+  failures.push("Result deletion should be folded into update_and_delete_results")
 }
 
 if (!allCheck.includes("check-dune-performance-timing.mjs")) {

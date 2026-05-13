@@ -1727,7 +1727,7 @@ function NumberStepperField({
   const stepperStateLabel = itemisedExceedsTotal
     ? "Below itemised"
     : sourceTotalUnknown
-      ? "Total unknown"
+      ? "Set total"
       : totalNotFullyItemised
         ? "Not itemised"
         : undefined

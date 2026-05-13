@@ -698,46 +698,71 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return timing.json({ success: false, error: "Each result must include playerName and rank" }, { status: 400 })
     }
 
-    const normalisedPlayerNames = [...new Set(playerNames.map((playerName) => String(playerName).toLowerCase()))]
-    const leaderIds = [
+    const submittedPlayersByName = new Map<string, { id: string; name: string }>()
+    for (const result of results) {
+      const playerId = nullableUuid(firstDefined(result, ["playerId", "player_id"]))
+      const playerName = nullableText(result.playerName)
+      if (playerId && playerName) {
+        submittedPlayersByName.set(playerName.toLowerCase(), { id: playerId, name: playerName })
+      }
+    }
+
+    const playerNamesNeedingLookup = playerNames
+      .filter((playerName): playerName is string => typeof playerName === "string" && playerName.length > 0)
+      .filter((playerName) => !submittedPlayersByName.has(playerName.toLowerCase()))
+    const normalisedPlayerNames = [...new Set(playerNamesNeedingLookup.map((playerName) => playerName.toLowerCase()))]
+    const leaderIdsNeedingLookup = [
       ...new Set(
         results
+          .filter((result: any) => !nullableText(firstDefined(result, ["leaderName", "leader_name", "leader"])))
           .map((result: any) => nullableUuid(firstDefined(result, ["leaderId", "leader_id"])))
           .filter((id: string | null): id is string => id !== null),
       ),
     ]
-    const strategicArchetypeIds = [
+    const strategicArchetypeIdsNeedingLookup = [
       ...new Set(
         results
+          .filter(
+            (result: any) =>
+              !nullableText(
+                firstDefined(result, ["strategicArchetypeName", "strategic_archetype_name", "strategic_archetype"]),
+              ),
+          )
           .map((result: any) => nullableUuid(firstDefined(result, ["strategicArchetypeId", "strategic_archetype_id"])))
           .filter((id: string | null): id is string => id !== null),
       ),
     ]
 
     const [existingPlayers, leaderRows, strategicArchetypeRows] = await timing.time("load_reference_data", () => Promise.all([
-      timing.time("load_players", () => sql`
-        SELECT id, name
-        FROM players
-        WHERE group_id = ${game.group_id}
-          AND LOWER(name) = ANY(${normalisedPlayerNames}::text[])
-      `),
-      game.game_type === "dune" && leaderIds.length > 0
+      normalisedPlayerNames.length > 0
+        ? timing.time("load_players", () => sql`
+            SELECT id, name
+            FROM players
+            WHERE group_id = ${game.group_id}
+              AND LOWER(name) = ANY(${normalisedPlayerNames}::text[])
+          `)
+        : Promise.resolve([]),
+      game.game_type === "dune" && leaderIdsNeedingLookup.length > 0
         ? timing.time("load_leaders", () => sql`
             SELECT id, name
             FROM leaders
-            WHERE id = ANY(${leaderIds}::uuid[])
+            WHERE id = ANY(${leaderIdsNeedingLookup}::uuid[])
           `)
         : Promise.resolve([]),
-      game.game_type === "dune" && strategicArchetypeIds.length > 0
+      game.game_type === "dune" && strategicArchetypeIdsNeedingLookup.length > 0
         ? timing.time("load_strategic_archetypes", () => sql`
             SELECT id, name
             FROM strategic_archetypes
-            WHERE id = ANY(${strategicArchetypeIds}::uuid[])
+            WHERE id = ANY(${strategicArchetypeIdsNeedingLookup}::uuid[])
           `)
         : Promise.resolve([]),
     ]))
 
     const playersByName = new Map<string, any>()
+    for (const player of submittedPlayersByName.values()) {
+      playersByName.set(String(player.name).toLowerCase(), player)
+    }
+
     for (const player of existingPlayers) {
       playersByName.set(String(player.name).toLowerCase(), player)
     }

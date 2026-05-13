@@ -70,6 +70,7 @@ export interface DuneAcquisitionOption {
   description?: string
   vpAvailable?: number
   copyCount?: number | null
+  copyScope?: "global" | "per_player" | null
   conflictLevel?: number | null
   battleIcon?: BattleIcon | null
   searchText: string

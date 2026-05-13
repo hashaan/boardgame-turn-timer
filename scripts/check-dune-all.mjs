@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process"
 
 const scripts = [
   "scripts/check-dune-battle-icons.mjs",
+  "scripts/check-dune-inventory-counts.mjs",
   "scripts/check-dune-acquisition-workflows.mjs",
   "scripts/check-dune-ui-patterns.mjs",
   "scripts/check-dune-schema-migration.mjs",

@@ -1136,6 +1136,29 @@ function labelledCount(label: string, count: number | undefined): string | null 
   return count > 1 ? `${label} ×${count}` : label
 }
 
+function battleIconSummaryBadges(result: Record<string, any>, breakdown: ReturnType<typeof calculateBattleIconVpForResult>) {
+  const badges: Array<{ label: string; className?: string }> = []
+
+  if (breakdown.battleIconVp > 0) {
+    badges.push({
+      label: `${breakdown.battleIconVp} battle icon VP`,
+      className: "rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 font-medium text-rose-700",
+    })
+  }
+
+  const recordedBattleIconVp = positiveInt(result.vpSourcesBattleIconMatches)
+  const unitemisedBattleIconVp = Math.max(0, recordedBattleIconVp - breakdown.battleIconVp)
+
+  if (unitemisedBattleIconVp > 0) {
+    badges.push({
+      label: `${unitemisedBattleIconVp} battle icon VP not itemised`,
+      className: "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700",
+    })
+  }
+
+  return badges
+}
+
 function battleIconSourceBadges(breakdown: ReturnType<typeof calculateBattleIconVpForResult>) {
   const conflictBadges: Record<string, string[]> = {}
   for (const [itemKey, usage] of Object.entries(breakdown.conflictUsageByItemKey)) {
@@ -2440,10 +2463,7 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
                 unlistedLabel="conflict reward VP not itemised"
                 summaryMetric="vp"
                 vpSummaryLabel="reward VP"
-                extraSummaryBadges={battleIconBreakdown.battleIconVp > 0 ? [{
-                  label: `${battleIconBreakdown.battleIconVp} battle icon VP`,
-                  className: "rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 font-medium text-rose-700",
-                }] : []}
+                extraSummaryBadges={battleIconSummaryBadges(player, battleIconBreakdown)}
                 enableVpControls
                 defaultVpOnAdd
                 value={player.acquisitions}

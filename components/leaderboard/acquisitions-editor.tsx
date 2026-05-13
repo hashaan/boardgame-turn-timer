@@ -179,6 +179,7 @@ function defaultStatusForOption(option: DuneAcquisitionOption): AcquisitionItemS
     case "starter_card":
       return "in_final_deck"
     case "intrigue_card":
+      return "not_set"
     case "tech_tile":
     case "sardaukar_skill":
       return "held"
@@ -227,6 +228,7 @@ function getItemStatus(item: PlaythroughResultAcquisitionInput): AcquisitionItem
     case "starter_card":
       return "in_final_deck"
     case "intrigue_card":
+      return "not_set"
     case "tech_tile":
     case "sardaukar_skill":
       return "held"
@@ -246,7 +248,7 @@ function getStatusOptions(item: PlaythroughResultAcquisitionInput): AcquisitionI
     case "contract":
       return ["completed", "held"]
     case "intrigue_card":
-      return ["played", "held"]
+      return ["not_set", "played", "held"]
     case "imperium_card":
     case "reserve_card":
     case "starter_card":
@@ -459,6 +461,43 @@ function copyLimit(option?: DuneAcquisitionOption): number | undefined {
   return typeof count === "number" && Number.isFinite(count) && count > 0 ? Math.trunc(count) : undefined
 }
 
+function usesGlobalCopyLimit(option?: DuneAcquisitionOption, itemType?: AcquisitionItemType): boolean {
+  if (option?.copyScope === "per_player") return false
+  if (option?.copyScope === "global") return true
+
+  // Backwards compatibility for rows created before copyScope was exposed.
+  return itemType !== "starter_card"
+}
+
+function perPlayerCopyLimit(option?: DuneAcquisitionOption, itemType?: AcquisitionItemType): number | undefined {
+  if (itemType === "sardaukar_skill") return 1
+
+  const limit = copyLimit(option)
+  return usesGlobalCopyLimit(option, itemType) ? undefined : limit
+}
+
+function globalCopyMaxForCurrent(
+  item: PlaythroughResultAcquisitionInput,
+  option?: DuneAcquisitionOption,
+  globalItemCounts?: Record<string, number>,
+): number | undefined {
+  const limit = copyLimit(option)
+  if (limit === undefined || !usesGlobalCopyLimit(option, item.itemType)) return undefined
+
+  const current = positiveCount(item.acquisitionCount)
+  return Math.max(0, limit - Math.max(0, globalCountFor(item.itemKey, current, globalItemCounts) - current))
+}
+
+function globalCopyMaxForNew(
+  option: DuneAcquisitionOption,
+  globalItemCounts?: Record<string, number>,
+): number | undefined {
+  const limit = copyLimit(option)
+  if (limit === undefined || !usesGlobalCopyLimit(option, option.itemType)) return undefined
+
+  return Math.max(0, limit - globalCountFor(option.itemKey, 0, globalItemCounts))
+}
+
 function globalCountFor(itemKey: string, fallback: number, globalItemCounts?: Record<string, number>): number {
   const value = globalItemCounts?.[itemKey]
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : fallback
@@ -511,13 +550,11 @@ function maxAllowedForCurrent(
   globalItemCounts?: Record<string, number>,
   selected: PlaythroughResultAcquisitionInput[] = [],
 ): number | undefined {
-  const copyCountLimit = copyLimit(option)
   const current = positiveCount(item.acquisitionCount)
-  const copyMax = copyCountLimit === undefined
-    ? undefined
-    : item.itemType === "starter_card"
-      ? copyCountLimit
-      : Math.max(0, copyCountLimit - Math.max(0, globalCountFor(item.itemKey, current, globalItemCounts) - current))
+  const copyMax = minDefined(
+    globalCopyMaxForCurrent(item, option, globalItemCounts),
+    perPlayerCopyLimit(option, item.itemType),
+  )
 
   const levelLimit = conflictLevelLimit(option)
   const level = conflictLevel(option)
@@ -536,12 +573,10 @@ function maxAllowedForNew(
   globalItemCounts?: Record<string, number>,
   selected: PlaythroughResultAcquisitionInput[] = [],
 ): number | undefined {
-  const copyCountLimit = copyLimit(option)
-  const copyMax = copyCountLimit === undefined
-    ? undefined
-    : option.itemType === "starter_card"
-      ? copyCountLimit
-      : Math.max(0, copyCountLimit - globalCountFor(option.itemKey, 0, globalItemCounts))
+  const copyMax = minDefined(
+    globalCopyMaxForNew(option, globalItemCounts),
+    perPlayerCopyLimit(option, option.itemType),
+  )
 
   const levelLimit = conflictLevelLimit(option)
   const level = conflictLevel(option)
@@ -563,10 +598,13 @@ function countLimitWarning(
   const copyCountLimit = copyLimit(option)
   const current = positiveCount(item.acquisitionCount)
   const global = globalCountFor(item.itemKey, current, globalItemCounts)
+  const playerLimit = perPlayerCopyLimit(option, item.itemType)
+
+  if (playerLimit !== undefined && current > playerLimit) return `${current} selected, ${playerLimit} per player`
 
   if (copyCountLimit !== undefined) {
-    if (item.itemType !== "starter_card" && global > copyCountLimit) return `${global} selected across players, ${copyCountLimit} available`
-    if (current > copyCountLimit) return `${current} selected, ${copyCountLimit} available`
+    if (usesGlobalCopyLimit(option, item.itemType) && global > copyCountLimit) return `${global} selected across players, ${copyCountLimit} available`
+    if (!usesGlobalCopyLimit(option, item.itemType) && current > copyCountLimit) return `${current} selected, ${copyCountLimit} available`
   }
 
   const levelLimit = conflictLevelLimit(option)

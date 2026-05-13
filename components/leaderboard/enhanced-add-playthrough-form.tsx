@@ -1693,11 +1693,15 @@ function NumberStepperField({
       : "border-slate-200 bg-white focus-within:ring-amber-500/25"
   const stepperStateLabel = itemisedExceedsTotal
     ? "Below itemised"
-    : sourceTotalUnknown
-      ? "Set total"
-      : totalNotFullyItemised
-        ? "Not itemised"
-        : undefined
+    : totalNotFullyItemised
+      ? "Not itemised"
+      : undefined
+  const shouldOfferTrackedTotal = canShowReconciliation && itemisedMinimum !== undefined && itemisedMinimum > safeMin && numericValue !== itemisedMinimum && (
+    numericValue === undefined || numericValue < itemisedMinimum
+  )
+  const trackedTotalHelper = shouldOfferTrackedTotal && itemisedMinimum !== undefined
+    ? `Tracked total: ${itemisedMinimum}`
+    : undefined
 
   const step = (delta: number) => {
     const base = numericValue ?? (delta > 0 ? safeMin : safeMin + 1)
@@ -1717,6 +1721,12 @@ function NumberStepperField({
     onChange(safeMax === undefined ? unclamped : Math.min(safeMax, unclamped))
   }
 
+  const applyTrackedTotal = () => {
+    if (itemisedMinimum !== undefined) {
+      onChange(itemisedMinimum)
+    }
+  }
+
   return (
     <div className="group grid w-full max-w-52 gap-1.5" title={lockedReason}>
       <div className="flex items-center justify-between gap-2">
@@ -1733,6 +1743,18 @@ function NumberStepperField({
             >
               {stepperStateLabel}
             </span>
+          )}
+          {shouldOfferTrackedTotal && (
+            <button
+              type="button"
+              className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={applyTrackedTotal}
+              disabled={disabled}
+              title={`Use tracked total for ${label ?? "value"}`}
+              aria-label={`Use tracked total for ${label ?? "value"}`}
+            >
+              Use tracked
+            </button>
           )}
           {isDirty && (
             <button
@@ -1765,7 +1787,7 @@ function NumberStepperField({
             inputMode="numeric"
             value={value ?? ""}
             onChange={(event) => handleInputChange(event.target.value)}
-            placeholder={placeholder ?? "Unset"}
+            placeholder={placeholder ?? "Not set"}
             disabled={disabled || isLocked}
             className={`h-9 min-w-0 flex-1 rounded-none border-0 bg-transparent text-center text-sm font-medium tabular-nums shadow-none [appearance:textfield] placeholder:text-slate-400 placeholder:font-normal focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isLocked ? "bg-slate-100 text-slate-500" : ""}`}
           />
@@ -1781,6 +1803,11 @@ function NumberStepperField({
         </div>
 
       </div>
+      {trackedTotalHelper && (
+        <p className={`text-[11px] font-medium ${itemisedExceedsTotal ? "text-red-600" : "text-amber-700"}`}>
+          {trackedTotalHelper}
+        </p>
+      )}
       {helperText && <p className="text-[11px] text-slate-500">{helperText}</p>}
     </div>
   )

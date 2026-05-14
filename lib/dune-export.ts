@@ -13,13 +13,29 @@ function shortId(value: string): string {
   return value.replace(/[^a-z0-9-]/gi, "").slice(0, 8) || "unknown"
 }
 
-function dateStamp(generatedAt: string): string {
-  return generatedAt.slice(0, 10)
+function exportTimestampStamp(generatedAt: string): string {
+  const date = new Date(generatedAt)
+
+  if (Number.isNaN(date.getTime())) {
+    return generatedAt.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 32) || "unknown-time"
+  }
+
+  const pad = (value: number): string => String(value).padStart(2, "0")
+
+  return [
+    date.getUTCFullYear(),
+    pad(date.getUTCMonth() + 1),
+    pad(date.getUTCDate()),
+    "-",
+    pad(date.getUTCHours()),
+    pad(date.getUTCMinutes()),
+    pad(date.getUTCSeconds()),
+  ].join("")
 }
 
 export function buildDuneExportFilename(scope: DuneExportScope, generatedAt: string): string {
   const scopePart = scope.type === "game" ? `game-${shortId(scope.gameId)}` : `group-${shortId(scope.groupId)}`
-  return `boardgame-turn-timer-dune-export-${scopePart}-${dateStamp(generatedAt)}.json`
+  return `boardgame-turn-timer-dune-export-${scopePart}-${exportTimestampStamp(generatedAt)}.json`
 }
 
 export async function gameBelongsToGroup(groupId: string, gameId: string): Promise<boolean> {

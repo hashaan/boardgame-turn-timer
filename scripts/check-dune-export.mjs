@@ -47,6 +47,15 @@ check("route returns a downloadable JSON file", () => {
   assert.match(route, /Cache-Control": "no-store"/, "export should not be cached")
 })
 
+check("export filename is timestamped", () => {
+  assert.ok(
+    exportLib.includes("function exportTimestampStamp(generatedAt: string): string"),
+    "export filename should use a timestamp helper",
+  )
+  assert.ok(exportLib.includes("exportTimestampStamp(generatedAt)"), "export filename should include seconds, not only a date")
+  assert.equal(exportLib.includes("dateStamp(generatedAt)"), false, "export filename should not use date-only stamps")
+})
+
 check("export contract is versioned and relational", () => {
   assert.match(exportTypes, /DUNE_EXPORT_FORMAT = "boardgame-turn-timer\.export"/, "export format should be named")
   assert.match(exportTypes, /DUNE_EXPORT_VERSION = 1/, "export should carry a version")

@@ -691,24 +691,12 @@ export function AcquisitionsEditor({
           ? totalVp
           : totalCopies
   const manualSummaryCount = typeof summaryCount === "number" && Number.isFinite(summaryCount) ? Math.trunc(summaryCount) : undefined
-  const sourceTotalUnknown = manualSummaryCount === undefined && accountedCount > 0 && (
-    summaryMetric === "vp" ||
-    summaryMetric === "strength" ||
-    vpOnly ||
-    strengthOnly
-  )
   const unlistedCount = manualSummaryCount !== undefined ? Math.max(0, manualSummaryCount - accountedCount) : 0
-  const overAccountedCount = manualSummaryCount !== undefined ? Math.max(0, accountedCount - manualSummaryCount) : 0
   const unlistedText = strengthOnly
     ? `${unlistedCount} STR not itemised`
     : vpOnly
       ? `${unlistedCount} VP not itemised`
       : `+${unlistedCount} ${unlistedLabel}`
-  const overAccountedText = strengthOnly
-    ? `${overAccountedCount} STR over`
-    : vpOnly
-      ? `${overAccountedCount} VP over`
-      : `${overAccountedCount} over ${unlistedLabel}`
   const warnings = selected
     .map((item) => countLimitWarning(item, getCatalogOption(item), globalItemCounts, selected))
     .filter((warning): warning is string => Boolean(warning))
@@ -946,11 +934,6 @@ export function AcquisitionsEditor({
             {unlistedCount > 0 && (
               <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
                 {unlistedText}
-              </span>
-            )}
-            {overAccountedCount > 0 && (
-              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
-                {overAccountedText}
               </span>
             )}
           </div>

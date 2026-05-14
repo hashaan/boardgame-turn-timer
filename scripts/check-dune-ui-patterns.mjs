@@ -66,6 +66,9 @@ for (const [name, source] of [["add form", addFormSource], ["edit form", editFor
 
 assert.match(editorSource, /if \(vpOnly\) \{\s*emitSectionChange\(selected\.map\(\(item\) => \(\{ \.\.\.item, vpCount: 0, entrySource: "manual" \}\)\)\)/, "VP source reset should preserve acquired cards and clear only VP attribution")
 assert.match(editorSource, /if \(strengthOnly\) \{\s*emitSectionChange\(selected\.map\(\(item\) => \(\{ \.\.\.item, strengthCount: 0, entrySource: "manual" \}\)\)\)/, "Strength source reset should preserve acquired cards and clear only strength attribution")
+assert.doesNotMatch(editorSource, /overAccountedCount|overAccountedText/, "tracked item summaries should leave below-tracked warnings to aggregate fields")
+assert.doesNotMatch(editorSource, /\$\{overAccountedCount\} over \$\{unlistedLabel\}/, "tracked item summaries should not show awkward over-not-itemised copy")
+assert.match(editorSource, /unlistedCount > 0/, "tracked item summaries should still show not-itemised badges when an entered total exceeds tracked evidence")
 
 console.log("✓ Dune UI pattern checks passed")
 

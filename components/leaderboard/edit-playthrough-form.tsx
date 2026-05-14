@@ -1765,17 +1765,19 @@ function NumberStepperField({
   }
 
   return (
-    <div className="group grid w-full max-w-52 gap-1.5" title={lockedReason}>
+    <div className="group grid w-full max-w-60 gap-1.5" title={lockedReason}>
       <div className="flex min-h-6 items-center justify-between gap-2">
         <Label htmlFor={id} className="text-xs font-medium text-slate-700">
           {label}
         </Label>
-        <div className="flex min-h-5 items-center gap-2">
+        <div className="flex min-h-5 min-w-0 items-center justify-end gap-1.5">
           {isLocked && <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Locked</span>}
           {stepperStateLabel && (
             <span
-              className={`text-[10px] font-semibold uppercase tracking-wide ${
-                itemisedExceedsTotal ? "text-red-600" : "text-amber-600"
+              className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-4 whitespace-nowrap ${
+                itemisedExceedsTotal
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
               }`}
             >
               {stepperStateLabel}
@@ -1784,7 +1786,7 @@ function NumberStepperField({
           {shouldOfferTrackedTotal && (
             <button
               type="button"
-              className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium leading-4 text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={applyTrackedTotal}
               disabled={disabled}
               title={`Use tracked total for ${label ?? "value"}`}

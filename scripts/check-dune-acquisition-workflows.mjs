@@ -91,6 +91,9 @@ assert.doesNotMatch(editorSource, /item\.itemType !== "starter_card" && global >
 assert.match(editorSource, /case "intrigue_card":\n\s+return "not_set"/, "New tracked Intrigues should not be auto-marked held")
 assert.match(editorSource, /case "intrigue_card":\n\s+return \["not_set", "played", "held"\]/, "Tracked Intrigues should require an explicit played or held status")
 assert.match(editorSource, /defaultVpOnAdd[\s\S]*nextItem\.itemType === "intrigue_card"\) nextItem\.itemStatus = "played"/, "Adding an Intrigue through VP sources should still mark it played")
+assert.match(editorSource, /defaultStrengthOnAdd[\s\S]*strengthCount: currentStrength \+ 1,[\s\S]*itemStatus: existing\.itemType === "intrigue_card" \? "played" : existing\.itemStatus/, "Reusing an Intrigue through strength sources should mark it played")
+assert.match(editorSource, /defaultStrengthOnAdd[\s\S]*nextItem\.strengthCount = 1[\s\S]*nextItem\.itemType === "intrigue_card"\) nextItem\.itemStatus = "played"/, "Adding an Intrigue through strength sources should mark it played")
+assert.match(editorSource, /const updateStrengthCount[\s\S]*itemStatus: item\.itemType === "intrigue_card" && next > 0 \? "played" : item\.itemStatus/, "Increasing an Intrigue strength source should keep it played")
 assert.match(editorSource, /vpOnly\) \{\n\s+emitSectionChange\(selected\.map\(\(item\) => \(\{ \.\.\.item, vpCount: 0, entrySource: "manual" \}\)\)\)/, "Clearing VP sources should zero attribution while preserving acquired cards")
 assert.match(editorSource, /strengthOnly\) \{\n\s+emitSectionChange\(selected\.map\(\(item\) => \(\{ \.\.\.item, strengthCount: 0, entrySource: "manual" \}\)\)\)/, "Clearing strength sources should zero attribution while preserving acquired cards")
 

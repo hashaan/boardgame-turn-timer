@@ -1729,11 +1729,11 @@ function NumberStepperField({
 
   return (
     <div className="group grid w-full max-w-52 gap-1.5" title={lockedReason}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex min-h-6 items-center justify-between gap-2">
         <Label htmlFor={id} className="text-xs font-medium text-slate-700">
           {label}
         </Label>
-        <div className="flex items-center gap-2">
+        <div className="flex min-h-5 items-center gap-2">
           {isLocked && <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Locked</span>}
           {stepperStateLabel && (
             <span
@@ -1747,7 +1747,7 @@ function NumberStepperField({
           {shouldOfferTrackedTotal && (
             <button
               type="button"
-              className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium leading-4 text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={applyTrackedTotal}
               disabled={disabled}
               title={`Use tracked total for ${label ?? "value"}`}
@@ -1803,12 +1803,13 @@ function NumberStepperField({
         </div>
 
       </div>
-      {trackedTotalHelper && (
-        <p className={`text-[11px] font-medium ${itemisedExceedsTotal ? "text-red-600" : "text-amber-700"}`}>
-          {trackedTotalHelper}
-        </p>
-      )}
-      {helperText && <p className="text-[11px] text-slate-500">{helperText}</p>}
+      <div className="min-h-4">
+        {trackedTotalHelper ? (
+          <p className="text-[11px] text-slate-500">{trackedTotalHelper}</p>
+        ) : helperText ? (
+          <p className="text-[11px] text-slate-500">{helperText}</p>
+        ) : null}
+      </div>
     </div>
   )
 }

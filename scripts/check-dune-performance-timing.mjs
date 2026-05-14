@@ -22,7 +22,9 @@ function read(filePath) {
 }
 
 const route = read(routePath)
+const resultContract = read(path.join(process.cwd(), "lib/dune/result-fields.ts"))
 const allCheck = read(allCheckPath)
+const routeAndResultContract = `${route}\n${resultContract}`
 
 const requiredStages = [
   "parse_body",
@@ -43,7 +45,7 @@ const requiredStages = [
 ]
 
 for (const stage of requiredStages) {
-  if (!route.includes(stage)) {
+  if (!routeAndResultContract.includes(stage)) {
     failures.push(`Missing update-route timing stage label: ${stage}`)
   }
 }

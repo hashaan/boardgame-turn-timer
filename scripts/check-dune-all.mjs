@@ -8,6 +8,7 @@ const scripts = [
   "scripts/check-dune-acquisition-workflows.mjs",
   "scripts/check-dune-ui-patterns.mjs",
   "scripts/check-dune-schema-migration.mjs",
+  "scripts/check-dune-result-contract.mjs",
   "scripts/check-dune-performance-timing.mjs",
 ]
 

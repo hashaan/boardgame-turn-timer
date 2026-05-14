@@ -1685,6 +1685,7 @@ function NumberStepperField({
   max,
   lockedReason,
   resetValue,
+  trackedTotalLabel,
   reconcileWithTrackedItems = false,
 }: {
   id: string
@@ -1698,16 +1699,14 @@ function NumberStepperField({
   max?: number
   lockedReason?: string
   resetValue?: number
+  trackedTotalLabel?: string
   reconcileWithTrackedItems?: boolean
 }) {
   const safeMin = Math.max(0, Math.trunc(min))
   const isLocked = Boolean(lockedReason)
   const numericValue = typeof value === "number" && Number.isFinite(value) ? value : undefined
   const safeMax = typeof max === "number" && Number.isFinite(max) ? Math.max(safeMin, Math.trunc(max)) : undefined
-  const resetTarget = typeof resetValue === "number" && Number.isFinite(resetValue)
-    ? Math.max(safeMin, Math.trunc(resetValue))
-    : safeMin
-  const isDirty = !isLocked && numericValue !== undefined && numericValue !== resetTarget
+  const canClearTotal = !isLocked && numericValue !== undefined && safeMin === 0
   const itemisedMinimum = typeof resetValue === "number" && Number.isFinite(resetValue)
     ? Math.max(safeMin, Math.trunc(resetValue))
     : undefined
@@ -1725,12 +1724,17 @@ function NumberStepperField({
       ? "border-amber-300 bg-amber-50 focus-within:ring-amber-500/25"
       : "border-slate-200 bg-white focus-within:ring-amber-500/25"
   const stepperStateLabel = itemisedExceedsTotal
-    ? "Below itemised"
-    : sourceTotalUnknown
-      ? "Set total"
-      : totalNotFullyItemised
-        ? "Not itemised"
-        : undefined
+    ? "Below tracked"
+    : totalNotFullyItemised
+      ? "Not itemised"
+      : undefined
+  const shouldOfferTrackedTotal = canShowReconciliation && itemisedMinimum !== undefined && itemisedMinimum > safeMin && numericValue !== itemisedMinimum && (
+    numericValue === undefined || numericValue < itemisedMinimum
+  )
+  const trackedTotalDisplay = trackedTotalLabel ?? (itemisedMinimum !== undefined ? String(itemisedMinimum) : undefined)
+  const trackedTotalHelper = shouldOfferTrackedTotal && trackedTotalDisplay !== undefined
+    ? `Tracked total: ${trackedTotalDisplay}`
+    : undefined
 
   const step = (delta: number) => {
     const base = numericValue ?? (delta > 0 ? safeMin : safeMin + 1)
@@ -1750,33 +1754,57 @@ function NumberStepperField({
     onChange(safeMax === undefined ? unclamped : Math.min(safeMax, unclamped))
   }
 
+  const applyTrackedTotal = () => {
+    if (itemisedMinimum !== undefined) {
+      onChange(itemisedMinimum)
+    }
+  }
+
+  const clearTotal = () => {
+    onChange(undefined)
+  }
+
   return (
-    <div className="group grid w-full max-w-52 gap-1.5" title={lockedReason}>
-      <div className="flex items-center justify-between gap-2">
+    <div className="group grid w-full max-w-60 gap-1.5" title={lockedReason}>
+      <div className="flex min-h-6 items-center justify-between gap-2">
         <Label htmlFor={id} className="text-xs font-medium text-slate-700">
           {label}
         </Label>
-        <div className="flex items-center gap-2">
+        <div className="flex min-h-5 min-w-0 items-center justify-end gap-1.5">
           {isLocked && <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Locked</span>}
           {stepperStateLabel && (
             <span
-              className={`text-[10px] font-semibold uppercase tracking-wide ${
-                itemisedExceedsTotal ? "text-red-600" : "text-amber-600"
+              className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-4 whitespace-nowrap ${
+                itemisedExceedsTotal
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
               }`}
             >
               {stepperStateLabel}
             </span>
           )}
-          {isDirty && (
+          {shouldOfferTrackedTotal && (
             <button
               type="button"
-              className="flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-medium text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => onChange(resetTarget)}
+              className="inline-flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={applyTrackedTotal}
               disabled={disabled}
-              title={`Reset ${label ?? "value"} to ${resetTarget}`}
-              aria-label={`Reset ${label ?? "value"} to ${resetTarget}`}
+              title={`Use tracked total for ${label ?? "value"}`}
+              aria-label={`Use tracked total for ${label ?? "value"}`}
             >
-              ↺
+              Use tracked
+            </button>
+          )}
+          {canClearTotal && (
+            <button
+              type="button"
+              className="rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-4 text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={clearTotal}
+              disabled={disabled}
+              title={`Clear ${label ?? "value"}`}
+              aria-label={`Clear ${label ?? "value"}`}
+            >
+              Clear
             </button>
           )}
         </div>
@@ -1798,7 +1826,7 @@ function NumberStepperField({
             inputMode="numeric"
             value={value ?? ""}
             onChange={(event) => handleInputChange(event.target.value)}
-            placeholder={placeholder ?? "Unset"}
+            placeholder={placeholder ?? "Not set"}
             disabled={disabled || isLocked}
             className={`h-9 min-w-0 flex-1 rounded-none border-0 bg-transparent text-center text-sm font-medium tabular-nums shadow-none [appearance:textfield] placeholder:text-slate-400 placeholder:font-normal focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isLocked ? "bg-slate-100 text-slate-500" : ""}`}
           />
@@ -1814,7 +1842,13 @@ function NumberStepperField({
         </div>
 
       </div>
-      {helperText && <p className="text-[11px] text-slate-500">{helperText}</p>}
+      <div className="min-h-4">
+        {trackedTotalHelper ? (
+          <p className="text-[11px] text-slate-500">{trackedTotalHelper}</p>
+        ) : helperText ? (
+          <p className="text-[11px] text-slate-500">{helperText}</p>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -2349,7 +2383,7 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
     player: PlayerRankInput,
     field: PlayerField,
     label: string,
-    options?: { min?: number; max?: number; placeholder?: string; resetValue?: number },
+    options?: { min?: number; max?: number; placeholder?: string; resetValue?: number; trackedTotalLabel?: string; reconcileWithTrackedItems?: boolean },
   ) => (
     <NumberStepperField
       id={`edit-${String(field)}-${index}`}
@@ -2358,6 +2392,9 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
       placeholder={options?.placeholder}
       min={options?.min}
       max={options?.max}
+      resetValue={options?.resetValue}
+      trackedTotalLabel={options?.trackedTotalLabel}
+      reconcileWithTrackedItems={options?.reconcileWithTrackedItems ?? options?.resetValue !== undefined}
       onChange={(value) => updateField(index, field, value as any)}
       disabled={submitting}
       lockedReason={getNumericLockReason(player, String(field))}
@@ -2391,6 +2428,10 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
     const deckCardsInFinalDeckFloor = countAcquisitionsForTypes(acquisitions, ["imperium_card", "reserve_card", "starter_card"], ["in_final_deck"])
     const deckCardsTrashedFloor = countAcquisitionsForTypes(acquisitions, ["imperium_card", "reserve_card", "starter_card"], ["trashed"])
     const navigationCardsFloor = countAcquisitions(acquisitions, "navigation_card", ["played"])
+    const commanderSkillStrengthFloor = sumAcquisitionStrength(acquisitions, ["sardaukar_skill"])
+    const intrigueStrengthFloor = sumAcquisitionStrength(acquisitions, ["intrigue_card"])
+    const imperiumStrengthFloor = sumAcquisitionStrength(acquisitions, ["imperium_card", "reserve_card"])
+    const techStrengthFloor = sumAcquisitionStrength(acquisitions, ["tech_tile"])
     const showVpSources = Boolean(showVpSourcesByPlayer[index])
     const showStrengthSources = Boolean(showStrengthSourcesByPlayer[index])
     const isSteersman = isSteersmanLeader(player)
@@ -2639,10 +2680,10 @@ export const EditPlaythroughForm = ({ playthrough, existingPlayers, onSubmit, on
               )}
             >
               <div className="flex flex-wrap gap-4">
-                {renderStepper(index, player, "finalConflictStrengthSourcesCommanderSkills", "Cmdr skills")}
-                {renderStepper(index, player, "finalConflictStrengthSourcesIntrigue", "Intrigue")}
-                {renderStepper(index, player, "finalConflictStrengthSourcesImperium", "Imperium")}
-                {renderStepper(index, player, "finalConflictStrengthSourcesTech", "Tech tiles")}
+                {renderStepper(index, player, "finalConflictStrengthSourcesCommanderSkills", "Cmdr skills", { resetValue: commanderSkillStrengthFloor || undefined, trackedTotalLabel: commanderSkillStrengthFloor ? `+${commanderSkillStrengthFloor} STR` : undefined })}
+                {renderStepper(index, player, "finalConflictStrengthSourcesIntrigue", "Intrigue", { resetValue: intrigueStrengthFloor || undefined, trackedTotalLabel: intrigueStrengthFloor ? `+${intrigueStrengthFloor} STR` : undefined })}
+                {renderStepper(index, player, "finalConflictStrengthSourcesImperium", "Imperium", { resetValue: imperiumStrengthFloor || undefined, trackedTotalLabel: imperiumStrengthFloor ? `+${imperiumStrengthFloor} STR` : undefined })}
+                {renderStepper(index, player, "finalConflictStrengthSourcesTech", "Tech tiles", { resetValue: techStrengthFloor || undefined, trackedTotalLabel: techStrengthFloor ? `+${techStrengthFloor} STR` : undefined })}
               </div>
               {showStrengthSources && (
                 <div className="mt-3 grid gap-3">

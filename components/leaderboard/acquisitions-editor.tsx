@@ -772,6 +772,7 @@ export function AcquisitionsEditor({
         replaceExisting(normaliseItem({
           ...existing,
           strengthCount: currentStrength + 1,
+          itemStatus: existing.itemType === "intrigue_card" ? "played" : existing.itemStatus,
           entrySource: existing.entrySource ?? existing.entry_source ?? (strengthOnly ? "strength_source" : "manual"),
         }, vpCapMultiplier))
       } else {
@@ -796,6 +797,7 @@ export function AcquisitionsEditor({
       }
       if (defaultStrengthOnAdd && isStrengthOption(option)) {
         nextItem.strengthCount = 1
+        if (nextItem.itemType === "intrigue_card") nextItem.itemStatus = "played"
       }
       emitSectionChange([...selected, nextItem])
     }
@@ -888,6 +890,7 @@ export function AcquisitionsEditor({
 
     updateItem(itemKey, {
       strengthCount: next,
+      itemStatus: item.itemType === "intrigue_card" && next > 0 ? "played" : item.itemStatus,
       entrySource: item.entrySource ?? item.entry_source ?? (strengthOnly ? "strength_source" : "manual"),
     })
   }
@@ -938,11 +941,6 @@ export function AcquisitionsEditor({
             {totalStrength > 0 && (
               <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 font-semibold text-rose-700">
                 +{totalStrength} STR
-              </span>
-            )}
-            {sourceTotalUnknown && (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                Total unset
               </span>
             )}
             {unlistedCount > 0 && (

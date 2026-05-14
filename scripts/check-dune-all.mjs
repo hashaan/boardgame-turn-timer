@@ -9,8 +9,7 @@ const scripts = [
   "scripts/check-dune-ui-patterns.mjs",
   "scripts/check-dune-schema-migration.mjs",
   "scripts/check-dune-performance-timing.mjs",
-  "scripts/check-dune-export.mjs",
-]
+  "scripts/check-dune-export.mjs",]
 
 for (const script of scripts) {
   const result = spawnSync(process.execPath, [script], { stdio: "inherit" })

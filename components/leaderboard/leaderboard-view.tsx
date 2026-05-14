@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useState } from "react"
 import { EnhancedAddPlaythroughForm } from "./enhanced-add-playthrough-form"
+import { ExportDataButton } from "./export-data-button"
 
 interface LeaderboardViewProps {
   leaderboardData: GameLeaderboard | null
@@ -111,11 +112,14 @@ export const LeaderboardView = ({
               )}
             </div>
           </div>
-          <div className="text-right text-sm text-muted-foreground">
+          <div className="flex flex-col items-end gap-2 text-right text-sm text-muted-foreground">
             <div className="flex items-center">
               <Users className="w-4 h-4 mr-1" />
               {existingPlayers.length} registered players
             </div>
+            {groupId && isDuneGame && (
+              <ExportDataButton groupId={groupId} gameId={game.id} />
+            )}
           </div>
         </div>
       </header>

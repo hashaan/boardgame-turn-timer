@@ -219,6 +219,83 @@ export const playthroughApi = {
   },
 }
 
+interface ExportDownloadResult {
+  filename: string
+}
+
+function filenameFromContentDisposition(header: string | null): string {
+  if (!header) return "boardgame-turn-timer-dune-export.json"
+
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+
+  const quotedMatch = header.match(/filename="([^\"]+)"/i)
+  if (quotedMatch?.[1]) return quotedMatch[1]
+
+  const bareMatch = header.match(/filename=([^;]+)/i)
+  return bareMatch?.[1]?.trim() || "boardgame-turn-timer-dune-export.json"
+}
+
+async function readExportError(response: Response): Promise<string> {
+  try {
+    const data = await response.json()
+    if (typeof data?.error === "string") return data.error
+    if (typeof data?.details === "string") return data.details
+  } catch {
+    // Ignore non-JSON error bodies.
+  }
+
+  return `Export failed (${response.status})`
+}
+
+export const dataExportApi = {
+  async downloadGroupExport(
+    groupId: string,
+    options: { gameId?: string | null } = {},
+  ): Promise<ApiResponse<ExportDownloadResult>> {
+    try {
+      if (typeof window === "undefined" || typeof document === "undefined") {
+        return { success: false, error: "Downloads are only available in the browser" }
+      }
+
+      const params = new URLSearchParams()
+      if (options.gameId) params.set("gameId", options.gameId)
+
+      const query = params.toString()
+      const response = await fetch(`${API_BASE}/groups/${groupId}/export${query ? `?${query}` : ""}`, {
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        return { success: false, error: await readExportError(response) }
+      }
+
+      const blob = await response.blob()
+      const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+
+      link.href = objectUrl
+      link.download = filename
+      link.rel = "noopener"
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+
+      return { success: true, data: { filename } }
+    } catch (error) {
+      console.error("API Error:", error)
+      return { success: false, error: error instanceof Error ? error.message : "Network error" }
+    }
+  },
+}
 // New Season API functions
 export const seasonApi = {
   async getCurrentSeason(
